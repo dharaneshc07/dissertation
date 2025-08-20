@@ -53,13 +53,14 @@ def _get_secret(name, default=None):
 
 def get_connection():
     return psycopg2.connect(
-        dbname=_get_secret("DB_NAME", "postgres"),
-        user=_get_secret("DB_USER", "postgres"),
-        password=_get_secret("DB_PASSWORD", ""),
-        host=_get_secret("DB_HOST", "localhost"),
+        host=_get_secret("DB_HOST"),
+        dbname=_get_secret("DB_NAME"),
+        user=_get_secret("DB_USER"),
+        password=_get_secret("DB_PASSWORD"),
         port=_get_secret("DB_PORT", "5432"),
-        sslmode=_get_secret("DB_SSLMODE", "require")   # force SSL for Supabase
+        sslmode="require"   # <-- force SSL always
     )
+    
 def check_credentials(username, password):
     conn = get_connection()
     cur = conn.cursor()
