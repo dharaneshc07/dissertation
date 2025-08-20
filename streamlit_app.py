@@ -36,7 +36,7 @@ try:
     )
 except Exception:
     pass
-)
+
 
 # Keep Streamlit session state minimal & consistent
 for key, val in {"page": "landing", "role": None, "user": None, "enable_edit": False}.items():
