@@ -38,13 +38,11 @@ for key, val in {"page": "landing", "role": None, "user": None, "enable_edit": F
 # =========================
 # Part 2: DB Connection & Auth (single source of truth)
 # =========================
-import os
-import bcrypt
-import psycopg2
-import streamlit as st
+# -------- DB POOL (Neon-ready) --------
+import os, psycopg2
 from psycopg2.pool import SimpleConnectionPool
+import streamlit as st
 
-# --- Secrets loader (Streamlit Cloud first, then env, else default) ---
 def _get_secret(name: str, default: str | None = None) -> str | None:
     try:
         if name in st.secrets:
@@ -53,55 +51,56 @@ def _get_secret(name: str, default: str | None = None) -> str | None:
         pass
     return os.getenv(name, default)
 
-# --- Connection pool (works with Neon/Supabase/etc.) ---
 @st.cache_resource(show_spinner=False)
 def db_pool() -> SimpleConnectionPool:
     return SimpleConnectionPool(
         minconn=1,
         maxconn=5,
         dbname=_get_secret("DB_NAME", "neondb"),
-        user=_get_secret("DB_USER", "neondb_owner"),
+        user=_get_secret("DB_USER", "neondb_owner"),           # e.g. postgres.<projectid>
         password=_get_secret("DB_PASSWORD", ""),
-        host=_get_secret("DB_HOST", "localhost"),
-        port=_get_secret("DB_PORT", "5432"),
-        sslmode=_get_secret("DB_SSLMODE", "require"),  # cloud PG usually needs SSL
-        options=_get_secret("DB_OPTIONS", None) or None  # optional (e.g., channel_binding=require)
+        host=_get_secret("DB_HOST", "localhost"),              # e.g. aws-1-eu-central-1.pooler.supabase.com or *.neon.tech
+        port=_get_secret("DB_PORT", "5432"),                   # Neon pooler often 5432 or 6543, use what your dashboard says
+        sslmode=_get_secret("DB_SSLMODE", "require"),
+        connect_timeout=10,
+        keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=5,
+        options="-c statement_timeout=15000"
     )
+
+def reset_db_pool():
+    try: st.cache_resource.clear()
+    except Exception: pass
 
 def get_connection():
     try:
         return db_pool().getconn()
-    except Exception as e:
-        st.error(f"DB connection failed ❌: {type(e).__name__}: {e}")
-        return None
+    except Exception:
+        reset_db_pool()
+        try:
+            return db_pool().getconn()
+        except Exception as e:
+            st.error(f"DB connection failed ❌: {type(e).__name__}: {e}")
+            return None
 
 def release_connection(conn):
     if conn:
-        try:
-            db_pool().putconn(conn)
-        except Exception:
-            pass
+        try: db_pool().putconn(conn)
+        except Exception: pass
 
-# --- Auth helpers ---
-def check_credentials(username: str, password: str):
-    """
-    Return role ('admin'/'employee') if credentials are valid, else None.
-    """
-    conn = get_connection()
-    if not conn:
-        return None
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT password_hash, role FROM users WHERE username = %s", (username,))
-        row = cur.fetchone()
-        cur.close()
-        if row:
-            stored_hash, role = row
-            if bcrypt.checkpw(password.encode(), stored_hash.encode()):
-                return role
-        return None
-    finally:
-        release_connection(conn)
+# Optional: small banner so you see connectivity early
+if "db_checked" not in st.session_state:
+    st.session_state.db_checked = True
+    _c = get_connection()
+    if _c:
+        try:
+            with _c.cursor() as cur: cur.execute("SELECT 1")
+            st.caption("🔌 Database: connected")
+        except Exception as e:
+            st.caption(f"🔌 Database: connection error — {e}")
+        finally:
+            release_connection(_c)
+# -------- /DB POOL --------
+
 
 def create_user(username: str, password: str, role: str):
     """Insert a new user; show Streamlit feedback."""
@@ -124,21 +123,6 @@ def create_user(username: str, password: str, role: str):
         st.error(f"❌ Could not create user: {e}")
     finally:
         release_connection(conn)
-
-# (Optional) one-time connectivity check (shows a small banner)
-if "db_checked" not in st.session_state:
-    st.session_state.db_checked = True
-    _conn = get_connection()
-    if _conn:
-        try:
-            c = _conn.cursor()
-            c.execute("SELECT 1;")
-            c.close()
-            st.caption("🔌 Database: connected")
-        except Exception as e:
-            st.caption(f"🔌 Database: connection error — {e}")
-        finally:
-            release_connection(_conn)
 
 # ========================
 # Part 3: DB Operations (Receipts, Feedback, Admin)
