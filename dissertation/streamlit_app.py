@@ -55,8 +55,7 @@ def get_connection():
         password=_get_secret("DB_PASSWORD", ""),
         host=_get_secret("DB_HOST", "localhost"),
         port=_get_secret("DB_PORT", "5432"),
-        sslmode=_get_secret("DB_SSLMODE", "require")  
-    )
+        sslmode=_get_secret("DB_SSLMODE", None) or None 
 
 def check_credentials(username, password):
     conn = get_connection()
