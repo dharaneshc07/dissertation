@@ -87,12 +87,14 @@ def display_receipt(image_path: str) -> bool:
     try:
         if not image_path:
             return None
-        # If it's a local path and exists, show it
+
+        st.text(f"⏳ Checking: {image_path}")  # 🔍 Add this debug log
+
         if os.path.exists(image_path):
             st.image(image_path, width=220)
             return True
 
-        # If your convert_to_image can fetch/convert it (PDF/DOCX), try it
+        # Try fallback preview conversion
         try:
             preview = convert_to_image(image_path)
             if preview and os.path.exists(preview):
@@ -101,11 +103,9 @@ def display_receipt(image_path: str) -> bool:
         except Exception:
             pass
 
-        # Couldn’t render, but path was provided
         st.info(f"🗂 File stored at: {image_path}")
         return False
     except Exception:
-        # Path probably points to a file that doesn’t exist in this environment
         return None
 
 def check_credentials(username: str, password: str):
@@ -341,6 +341,11 @@ def render_upload_ui(user):
 
                 preview_path = f"uploads/preview_{user}_{ts}_{uid}.jpg"
                 shutil.copy(tmp_img, preview_path)
+                if not os.path.exists(preview_path):
+                    st.warning(f"Preview file missing: {preview_path}")
+                else:
+                    st.success(f"✅ Preview created at: {preview_path}")
+
                 st.image(preview_path, caption="Uploaded Receipt", use_column_width=True)
 
             except Exception as e:
