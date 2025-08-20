@@ -68,7 +68,7 @@ def db_pool() -> SimpleConnectionPool:
         connect_timeout=10,
         keepalives=1, keepalives_idle=30,
         keepalives_interval=10, keepalives_count=5,
-        options="-c statement_timeout=15000"
+        
     )
 
 def reset_db_pool():
