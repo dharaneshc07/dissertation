@@ -329,10 +329,21 @@ def render_upload_ui(user):
 
             # preview and predict
             try:
+                st.write("📂 Raw path:", raw_path)
                 tmp_img = convert_to_image(raw_path)
-                if not os.path.exists(tmp_img):
-                    st.error("❌ Preview image was not generated.")
+                st.write("🖼️ Temp image path:", tmp_img)
+
+                if not tmp_img or not os.path.exists(tmp_img):
+                    st.error(f"❌ Preview image was not generated: {tmp_img}")
                     return
+
+                preview_path = f"uploads/preview_{user}_{ts}_{uid}.jpg"
+                shutil.copy(tmp_img, preview_path)
+                st.image(preview_path, caption="Uploaded Receipt", use_column_width=True)
+
+            except Exception as e:
+                st.exception(e)
+                return
 
                 preview_path = f"uploads/preview_{user}_{ts}_{uid}.jpg"
                 shutil.copy(tmp_img, preview_path)
@@ -615,13 +626,13 @@ def render_anomaly():
         if anomaly_status is None:
             col1, col2 = st.columns(2)
             with col1:
-                if st.button(f"✅ Approve (#{rid})"):
+                if st.button(f"✅ Approve "):
                     update_anomaly_status_by_id(rid, "approved")
                     insert_anomaly_feedback(username, merchant, date, time, amount, category, "approved", uploaded_at)
                     st.success("Marked as APPROVED.")
                     st.rerun()
             with col2:
-                if st.button(f"❌ Reject (#{rid})"):
+                if st.button(f"❌ Reject"): 
                     update_anomaly_status_by_id(rid, "rejected")
                     insert_anomaly_feedback(username, merchant, date, time, amount, category, "rejected", uploaded_at)
                     st.warning("Marked as REJECTED.")
