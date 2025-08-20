@@ -117,6 +117,27 @@ def _resolve_display_image(image_path: str | None) -> str | None:
 
     return None
 
+# ---- Receipt preview helper ----
+def display_receipt(image_path: str) -> bool:
+    """
+    Try to show a preview of a stored receipt.
+    Returns True if an image was shown, else False.
+    """
+    try:
+        # convert_to_image handles pdf/docx -> jpg path for preview
+        preview = convert_to_image(image_path)
+        # If convert_to_image returns a temp path, prefer that
+        candidate = preview if preview and os.path.exists(preview) else image_path
+        if candidate and os.path.exists(candidate):
+            st.image(candidate, width=250)
+            return True
+    except Exception as e:
+        # Optional: uncomment for debugging
+        # st.caption(f"Preview error: {type(e).__name__}: {e}")
+        pass
+    return False
+
+    
 @contextmanager
 def get_conn():
     pool = db_pool()
