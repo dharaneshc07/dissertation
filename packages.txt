@@ -1,4 +1,5 @@
-libgl1
-libglib2.0-0
 tesseract-ocr
+libgl1
 poppler-utils
+libmagic1
+libglib2.0-0
