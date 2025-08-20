@@ -75,13 +75,13 @@ def get_connection():
             password=_get_secret("DB_PASSWORD", ""),
             host=_get_secret("DB_HOST", "localhost"),
             port=_get_secret("DB_PORT", "5432"),
-            sslmode="require"   # 🔑 Force SSL (needed for Supabase)
+            sslmode="require"  # 🔑 Force SSL for Supabase
         )
     except Exception as e:
-        st.error(f"❌ Database connection failed: {e}")
-        raise
+        st.error(f"Database connection failed: {e}")
+        return None
 
-    def _probe_db():
+def _probe_db():
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -90,7 +90,7 @@ def get_connection():
         st.success(f"DB OK ✅ — {v}")
     except Exception as e:
         # Show details so we know which part fails
-        st.error(f"DB connection failed ❌: {type(e).__name__}: {e}")
+        st.error(f"DB connection failed ❌: {type(e).__name__}: {e}")    
 
 # Call it once on the landing page (before login form)
 if "page" not in st.session_state or st.session_state["page"] == "landing":
