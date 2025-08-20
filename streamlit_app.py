@@ -39,31 +39,31 @@ for key, val in {"page": "landing", "role": None, "user": None, "enable_edit": F
 # Part 2: DB Connection & Auth (single source of truth)
 # =========================
 # --- DB (Supabase Pooler via psycopg2) ---
-import os, psycopg2, streamlit as st
 from psycopg2.pool import SimpleConnectionPool
+import socket
 
-def _sec(k: str, default: str | None = None) -> str | None:
-    # Prefer Streamlit secrets, else env var, else default
+def _sec(name, default=None):
     try:
-        if k in st.secrets:
-            return str(st.secrets[k])
+        if name in st.secrets:
+            return st.secrets[name]
     except Exception:
         pass
-    return os.getenv(k, default)
+    return os.getenv(name, default)
 
 @st.cache_resource(show_spinner=False)
-def db_pool() -> SimpleConnectionPool:
-    # Use the **Transaction Pooler** (IPv4, port 6543)
-    return SimpleConnectionPool(
-        minconn=1,
-        maxconn=5,
-        host=_sec("DB_HOST", "localhost"),
-        port=int(_sec("DB_PORT", "5432")),
-        dbname=_sec("DB_NAME", "postgres"),
-        user=_sec("DB_USER", "postgres"),
-        password=_sec("DB_PASSWORD", ""),
-        sslmode=_sec("DB_SSLMODE", "require"),
-    )
+def db_pool():
+    url = _sec("DATABASE_URL")  # ← uses the single URL
+    if not url:
+        st.stop()  # fail fast with a clear message
+    # Small DNS/TCP smoke test (helps debug)
+    try:
+        host = url.split('@')[1].split(':')[0]
+        port = int(url.split(':')[-1].split('/')[0])
+        with socket.create_connection((host, port), timeout=5):
+            pass
+    except Exception as e:
+        st.error(f"DB socket test failed: {type(e).__name__}: {e}")
+    return SimpleConnectionPool(minconn=1, maxconn=5, dsn=url)
 
 def get_connection():
     return db_pool().getconn()
@@ -72,18 +72,15 @@ def release_connection(conn):
     if conn:
         db_pool().putconn(conn)
 
-# Quick self-test in the sidebar (safe: no password shown)
-with st.sidebar:
-    st.caption("DB connectivity check")
-    st.write(f"Host: {_sec('DB_HOST','?')}  |  Port: {_sec('DB_PORT','?')}")
-    try:
-        _conn = get_connection()
-        with _conn.cursor() as c:
-            c.execute("SELECT 1;")
-        release_connection(_conn)
-        st.success("DB OK ✅")
-    except Exception as e:
-        st.error(f"DB FAIL ❌: {type(e).__name__}")
+# (Optional) one-time health check near the top of your app
+try:
+    _conn = get_connection()
+    with _conn.cursor() as c:
+        c.execute("SELECT 1;")
+    release_connection(_conn)
+    st.caption("DB connectivity check: ✅ OK")
+except Exception as e:
+    st.error(f"DB connectivity check: ❌ {type(e).__name__}")
 
 def check_credentials(username: str, password: str):
     """Return role ('admin'/'employee') if credentials are valid, else None."""
