@@ -16,3 +16,4 @@ receipts-env/
 uploads/
 models/
 smart_expense_assistant.zip
+.env
