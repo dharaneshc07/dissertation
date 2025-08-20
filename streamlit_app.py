@@ -71,7 +71,7 @@ def release_connection(conn):
         db_pool().putconn(conn)
 
 # (Optional) one-time health check near the top of your app
-t# --- One‑time DB connectivity self‑test (optional) ---
+# --- One‑time DB connectivity self‑test (optional) ---
 _conn = None
 try:
     _conn = get_connection()
@@ -87,7 +87,7 @@ except Exception as e:
 finally:
     if _conn is not None:
         release_connection(_conn)
-        
+
 def create_user(username: str, password: str, role: str):
     """Insert a new user; show Streamlit feedback."""
     conn = get_connection()
