@@ -2,3 +2,13 @@ tesseract-ocr
 libgl1
 poppler-utils
 libmagic1
+libgl1
+libglib2.0-0
+poppler-utils # for pdf2image
+tesseract-ocr # for pytesseract
+libtesseract-dev
+libgl1
+libglib2.0-0
+poppler-utils
+tesseract-ocr
+libtesseract-dev
