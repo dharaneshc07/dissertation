@@ -87,31 +87,36 @@ from PIL import Image
 
 def display_receipt(image_path: str) -> bool:
     try:
-        if not image_path or not os.path.exists(image_path):
-            st.info(f"🗂 File stored at: {image_path}")
+        if not image_path:
             return False
 
-        # Attempt to open the image directly
-        try:
-            img = Image.open(image_path)
-            st.image(img, width=220)
-            return True
-        except:
-            pass
-
-        # Try conversion fallback
-        try:
-            converted = convert_to_image(image_path)
-            if converted and os.path.exists(converted):
-                img = Image.open(converted)
+        # Try to load and preview directly
+        if os.path.exists(image_path):
+            try:
+                img = Image.open(image_path)
                 st.image(img, width=220)
                 return True
-        except:
-            pass
+            except Exception as e:
+                st.warning(f"❌ Direct image preview failed: {e}")
 
-        st.info(f"🗂 File stored at: {image_path}")
+        # Try convert fallback
+        try:
+            preview = convert_to_image(image_path)
+            if preview and os.path.exists(preview):
+                try:
+                    img = Image.open(preview)
+                    st.image(img, width=220)
+                    return True
+                except Exception as e:
+                    st.warning(f"❌ Converted image preview failed: {e}")
+        except Exception as e:
+            st.warning(f"❌ convert_to_image failed: {e}")
+
+        # Fallback info
+        st.caption(f"🗂 File stored at: {image_path}")
         return False
-    except:
+    except Exception as e:
+        st.error(f"Unexpected error in display_receipt(): {e}")
         return False
 
 def check_credentials(username: str, password: str):
