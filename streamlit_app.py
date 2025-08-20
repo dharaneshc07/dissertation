@@ -28,11 +28,14 @@ st.set_page_config(
     layout="wide",
 )
 st.title("125 – 126 Agentic-AI to optimise expense submission process")
-st.caption(
-    "Using DB host: "
-    + str(_get_secret("DB_HOST", "?"))
-    + " | user: "
-    + str(_get_secret("DB_USER", "?"))
+# Safe debug banner (optional)
+try:
+    st.caption(
+        f"DB host: {_get_secret('DB_HOST','?')} | "
+        f"port: {_get_secret('DB_PORT','?')}"
+    )
+except Exception:
+    pass
 )
 
 # Keep Streamlit session state minimal & consistent
@@ -47,11 +50,12 @@ for key, val in {"page": "landing", "role": None, "user": None, "enable_edit": F
 # =========================
 # DB helpers (pool + auth)
 # =========================
-import os, psycopg2, bcrypt, streamlit as st
+# --- Secrets helper + DB pool (place right after imports) ---
+import os, streamlit as st
 from psycopg2.pool import SimpleConnectionPool
 
 def _get_secret(name: str, default: str | None = None) -> str | None:
-    """Prefer Streamlit Cloud secrets, then env vars."""
+    """Prefer Streamlit secrets first, then environment variables."""
     try:
         if name in st.secrets:
             return str(st.secrets[name])
@@ -61,42 +65,26 @@ def _get_secret(name: str, default: str | None = None) -> str | None:
 
 @st.cache_resource(show_spinner=False)
 def db_pool() -> SimpleConnectionPool:
-    """One pooled connection for the app (works locally & on cloud)."""
     return SimpleConnectionPool(
         minconn=1,
         maxconn=5,
-        dbname=_get_secret("DB_NAME", "neondb"),           # set via secrets
+        dbname=_get_secret("DB_NAME", "neondb"),
         user=_get_secret("DB_USER", "neondb_owner"),
         password=_get_secret("DB_PASSWORD", ""),
         host=_get_secret("DB_HOST", "localhost"),
         port=_get_secret("DB_PORT", "5432"),
-        sslmode=_get_secret("DB_SSLMODE", "require"),      # Neon/Supabase need SSL
-        connect_timeout=10,
-        keepalives=1, keepalives_idle=30,
-        keepalives_interval=10, keepalives_count=5,
-        
+        sslmode=_get_secret("DB_SSLMODE", "require"),
     )
 
-def reset_db_pool():
-    try:
-        st.cache_resource.clear()
-    except Exception:
-        pass
-
 def get_connection():
-    """Borrow a connection from the pool; auto-reset if broken."""
+    pool = db_pool()
     try:
-        return db_pool().getconn()
-    except Exception:
-        reset_db_pool()
-        try:
-            return db_pool().getconn()
-        except Exception as e:
-            st.error(f"DB connection failed ❌: {type(e).__name__}: {e}")
-            return None
+        return pool.getconn()
+    except Exception as e:
+        st.error(f"DB connection failed ❌: {type(e).__name__}: {e}")
+        return None
 
 def release_connection(conn):
-    """Return a connection to the pool safely."""
     if conn:
         try:
             db_pool().putconn(conn)
