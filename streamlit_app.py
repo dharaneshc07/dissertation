@@ -38,10 +38,24 @@ for key, val in {"page": "landing", "role": None, "user": None, "enable_edit": F
 # =========================
 # Part 2: DB Connection & Auth (single source of truth)
 # =========================
+import os
+import bcrypt
+import psycopg2
+import streamlit as st
 from psycopg2.pool import SimpleConnectionPool
 
+# --- Secrets loader (Streamlit Cloud first, then env, else default) ---
+def _get_secret(name: str, default: str | None = None) -> str | None:
+    try:
+        if name in st.secrets:
+            return str(st.secrets[name])
+    except Exception:
+        pass
+    return os.getenv(name, default)
+
+# --- Connection pool (works with Neon/Supabase/etc.) ---
 @st.cache_resource(show_spinner=False)
-def db_pool():
+def db_pool() -> SimpleConnectionPool:
     return SimpleConnectionPool(
         minconn=1,
         maxconn=5,
@@ -50,14 +64,15 @@ def db_pool():
         password=_get_secret("DB_PASSWORD", ""),
         host=_get_secret("DB_HOST", "localhost"),
         port=_get_secret("DB_PORT", "5432"),
-        sslmode=_get_secret("DB_SSLMODE", "require")
+        sslmode=_get_secret("DB_SSLMODE", "require"),  # cloud PG usually needs SSL
+        options=_get_secret("DB_OPTIONS", None) or None  # optional (e.g., channel_binding=require)
     )
 
 def get_connection():
     try:
         return db_pool().getconn()
     except Exception as e:
-        st.error(f"DB connection failed ❌: {e}")
+        st.error(f"DB connection failed ❌: {type(e).__name__}: {e}")
         return None
 
 def release_connection(conn):
@@ -66,6 +81,28 @@ def release_connection(conn):
             db_pool().putconn(conn)
         except Exception:
             pass
+
+# --- Auth helpers ---
+def check_credentials(username: str, password: str):
+    """
+    Return role ('admin'/'employee') if credentials are valid, else None.
+    """
+    conn = get_connection()
+    if not conn:
+        return None
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT password_hash, role FROM users WHERE username = %s", (username,))
+        row = cur.fetchone()
+        cur.close()
+        if row:
+            stored_hash, role = row
+            if bcrypt.checkpw(password.encode(), stored_hash.encode()):
+                return role
+        return None
+    finally:
+        release_connection(conn)
+
 def create_user(username: str, password: str, role: str):
     """Insert a new user; show Streamlit feedback."""
     conn = get_connection()
@@ -88,7 +125,21 @@ def create_user(username: str, password: str, role: str):
     finally:
         release_connection(conn)
 
-   
+# (Optional) one-time connectivity check (shows a small banner)
+if "db_checked" not in st.session_state:
+    st.session_state.db_checked = True
+    _conn = get_connection()
+    if _conn:
+        try:
+            c = _conn.cursor()
+            c.execute("SELECT 1;")
+            c.close()
+            st.caption("🔌 Database: connected")
+        except Exception as e:
+            st.caption(f"🔌 Database: connection error — {e}")
+        finally:
+            release_connection(_conn)
+
 # ========================
 # Part 3: DB Operations (Receipts, Feedback, Admin)
 # =========================
