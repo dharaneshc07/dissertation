@@ -67,17 +67,19 @@ def _get_secret(key: str, default: str | None = None) -> str | None:
         pass
     return os.getenv(key, default)
 
-def get_connection():
-    # Build DSN from secrets/env
-    host = _get_secret("DB_HOST", "localhost")
-    db   = _get_secret("DB_NAME", "postgres")
-    user = _get_secret("DB_USER", "postgres")
-    pw   = _get_secret("DB_PASSWORD", "")
-    port = _get_secret("DB_PORT", "5432")
-    ssl  = _get_secret("DB_SSLMODE", "require")
-
-    dsn = f"host={host} dbname={db} user={user} password={pw} port={port} sslmode={ssl}"
-    return psycopg2.connect(dsn)
+ddef get_connection():
+    try:
+        return psycopg2.connect(
+            dbname=_get_secret("DB_NAME", "postgres"),
+            user=_get_secret("DB_USER", "postgres"),
+            password=_get_secret("DB_PASSWORD", ""),
+            host=_get_secret("DB_HOST", "localhost"),
+            port=_get_secret("DB_PORT", "5432"),
+            sslmode="require"   # 🔑 Force SSL (needed for Supabase)
+        )
+    except Exception as e:
+        st.error(f"❌ Database connection failed: {e}")
+        raise
 
     def _probe_db():
     try:
@@ -94,7 +96,7 @@ def get_connection():
 if "page" not in st.session_state or st.session_state["page"] == "landing":
     _probe_db()
 
-    
+
 def check_credentials(username, password):
     conn = get_connection()
     cur = conn.cursor()
