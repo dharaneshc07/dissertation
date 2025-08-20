@@ -183,6 +183,39 @@ def get_conn():
         except Exception:
             pass
 
+# --- Image preview helper ---
+def display_receipt(image_path: str) -> bool:
+    """
+    Try to show a preview for a stored receipt path.
+    Returns:
+      True  -> preview shown
+      False -> file exists but couldn't render
+      None  -> file/path not available here
+    """
+    try:
+        if not image_path:
+            return None
+        # If it's a local path and exists, show it
+        if os.path.exists(image_path):
+            st.image(image_path, width=220)
+            return True
+
+        # If your convert_to_image can fetch/convert it (PDF/DOCX), try it
+        try:
+            preview = convert_to_image(image_path)
+            if preview and os.path.exists(preview):
+                st.image(preview, width=220)
+                return True
+        except Exception:
+            pass
+
+        # Couldn’t render, but path was provided
+        st.info(f"🗂 File stored at: {image_path}")
+        return False
+    except Exception:
+        # Path probably points to a file that doesn’t exist in this environment
+        return None
+
 def check_credentials(username: str, password: str):
     """
     Return role ('admin' / 'employee') if credentials are valid; else None.
@@ -514,7 +547,7 @@ def render_receipts(user):
     for r in rows:
         merchant, date, time, amount, category, was_corrected, uploaded_at, image_path, anomaly_status = r
         # Preview image (robust)
-        _ = display_receipt(image_path)
+        displayed = display_receipt(image_path)
         if not displayed:
             st.caption(f"🗂 Stored path: {image_path}")
 
@@ -541,7 +574,7 @@ def render_all_receipts():
     for r in rows:
         username, merchant, date, time, amount, category, was_corrected, uploaded_at, image_path, anomaly_status = r
         # Preview image (robust)
-        _ = display_receipt(image_path)
+        displayed = display_receipt(image_path)
         if not displayed:
             st.caption(f"🗂 Stored path: {image_path}")
 
