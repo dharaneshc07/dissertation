@@ -38,12 +38,14 @@ for key, val in {"page": "landing", "role": None, "user": None, "enable_edit": F
 # =========================
 # Part 2: DB Connection & Auth (single source of truth)
 # =========================
-# -------- DB POOL (Neon-ready) --------
-import os, psycopg2
+# =========================
+# DB helpers (pool + auth)
+# =========================
+import os, psycopg2, bcrypt, streamlit as st
 from psycopg2.pool import SimpleConnectionPool
-import streamlit as st
 
 def _get_secret(name: str, default: str | None = None) -> str | None:
+    """Prefer Streamlit Cloud secrets, then env vars."""
     try:
         if name in st.secrets:
             return str(st.secrets[name])
@@ -53,25 +55,30 @@ def _get_secret(name: str, default: str | None = None) -> str | None:
 
 @st.cache_resource(show_spinner=False)
 def db_pool() -> SimpleConnectionPool:
+    """One pooled connection for the app (works locally & on cloud)."""
     return SimpleConnectionPool(
         minconn=1,
         maxconn=5,
-        dbname=_get_secret("DB_NAME", "neondb"),
-        user=_get_secret("DB_USER", "neondb_owner"),           # e.g. postgres.<projectid>
+        dbname=_get_secret("DB_NAME", "neondb"),           # set via secrets
+        user=_get_secret("DB_USER", "neondb_owner"),
         password=_get_secret("DB_PASSWORD", ""),
-        host=_get_secret("DB_HOST", "localhost"),              # e.g. aws-1-eu-central-1.pooler.supabase.com or *.neon.tech
-        port=_get_secret("DB_PORT", "5432"),                   # Neon pooler often 5432 or 6543, use what your dashboard says
-        sslmode=_get_secret("DB_SSLMODE", "require"),
+        host=_get_secret("DB_HOST", "localhost"),
+        port=_get_secret("DB_PORT", "5432"),
+        sslmode=_get_secret("DB_SSLMODE", "require"),      # Neon/Supabase need SSL
         connect_timeout=10,
-        keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=5,
+        keepalives=1, keepalives_idle=30,
+        keepalives_interval=10, keepalives_count=5,
         options="-c statement_timeout=15000"
     )
 
 def reset_db_pool():
-    try: st.cache_resource.clear()
-    except Exception: pass
+    try:
+        st.cache_resource.clear()
+    except Exception:
+        pass
 
 def get_connection():
+    """Borrow a connection from the pool; auto-reset if broken."""
     try:
         return db_pool().getconn()
     except Exception:
@@ -83,27 +90,37 @@ def get_connection():
             return None
 
 def release_connection(conn):
+    """Return a connection to the pool safely."""
     if conn:
-        try: db_pool().putconn(conn)
-        except Exception: pass
-
-# Optional: small banner so you see connectivity early
-if "db_checked" not in st.session_state:
-    st.session_state.db_checked = True
-    _c = get_connection()
-    if _c:
         try:
-            with _c.cursor() as cur: cur.execute("SELECT 1")
-            st.caption("🔌 Database: connected")
-        except Exception as e:
-            st.caption(f"🔌 Database: connection error — {e}")
-        finally:
-            release_connection(_c)
-# -------- /DB POOL --------
+            db_pool().putconn(conn)
+        except Exception:
+            pass
 
+def check_credentials(username: str, password: str):
+    """
+    Return role ('admin' / 'employee') if credentials are valid; else None.
+    """
+    conn = get_connection()
+    if not conn:
+        return None
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT password_hash, role FROM users WHERE username = %s", (username,))
+        row = cur.fetchone()
+        cur.close()
+        if row:
+            pw_hash, role = row
+            if bcrypt.checkpw(password.encode(), pw_hash.encode()):
+                return role
+    except Exception as e:
+        st.error(f"❌ Login failed: {e}")
+    finally:
+        release_connection(conn)
+    return None
 
 def create_user(username: str, password: str, role: str):
-    """Insert a new user; show Streamlit feedback."""
+    """Create a new user with hashed password."""
     conn = get_connection()
     if not conn:
         st.error("No DB connection.")
@@ -123,6 +140,20 @@ def create_user(username: str, password: str, role: str):
         st.error(f"❌ Could not create user: {e}")
     finally:
         release_connection(conn)
+
+# (optional) tiny connectivity banner (runs once per session)
+if "db_checked" not in st.session_state:
+    st.session_state.db_checked = True
+    _c = get_connection()
+    if _c:
+        try:
+            with _c.cursor() as _cur:
+                _cur.execute("SELECT 1;")
+            st.caption("🔌 Database: connected")
+        except Exception as e:
+            st.caption(f"🔌 Database: connection error — {e}")
+        finally:
+            release_connection(_c)
 
 # ========================
 # Part 3: DB Operations (Receipts, Feedback, Admin)
