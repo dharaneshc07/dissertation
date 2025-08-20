@@ -83,25 +83,33 @@ def release_connection(conn):
 
 
 # --- Image preview helper ---
+from PIL import Image
+
 def display_receipt(image_path: str) -> bool:
     try:
         if not image_path:
             return None
 
-        st.text(f"⏳ Checking: {image_path}")  # 🔍 Add this debug log
+        st.text(f"⏳ Checking: {image_path}")
 
         if os.path.exists(image_path):
-            st.image(image_path, width=220)
-            return True
+            try:
+                img = Image.open(image_path)
+                st.image(img, width=220)
+                return True
+            except Exception as e:
+                st.warning(f"❌ Failed to load image: {e}")
+                return False
 
         # Try fallback preview conversion
         try:
             preview = convert_to_image(image_path)
             if preview and os.path.exists(preview):
-                st.image(preview, width=220)
+                img = Image.open(preview)
+                st.image(img, width=220)
                 return True
-        except Exception:
-            pass
+        except Exception as e:
+            st.warning(f"❌ Failed to convert preview: {e}")
 
         st.info(f"🗂 File stored at: {image_path}")
         return False
