@@ -334,15 +334,14 @@ def render_upload_ui(user):
             raw_path = f"uploads/{user}_{ts}_{uid}.{ext}"
             with open(raw_path, "wb") as f:
                 f.write(uploaded.read())
-            st.write(f"🛠 Saved file: {raw_path} — Exists: {os.path.exists(raw_path)}")
 
             # preview and predict
             predicted = {}
             try:
-                st.write("📂 Raw path:", raw_path)
+                
                 tmp_img = convert_to_image(raw_path)
-                st.write(f"🔁 Temp image from convert_to_image: {tmp_img} — Exists: {os.path.exists(tmp_img)}")
-                st.write("🖼️ Temp image path:", tmp_img)
+                
+                
 
                 if not tmp_img or not os.path.exists(tmp_img):
                     st.error(f"❌ Preview image was not generated: {tmp_img}")
@@ -458,22 +457,29 @@ def render_upload_ui(user):
 def display_receipt(image_path: str) -> bool:
     try:
         if not image_path:
-            return None
-        # If local and exists, show directly
+            return False
+
+        # Prefer showing the saved preview if available
         if os.path.exists(image_path):
-            st.image(image_path, width=220)
-            return True
+            try:
+                st.image(image_path, width=220)
+                return True
+            except Exception:
+                pass
 
-        # Convert other formats if needed
-        preview = convert_to_image(image_path)
-        if preview and os.path.exists(preview):
-            st.image(preview, width=220)
-            return True
+        # Fallback: convert using model pipeline helper
+        try:
+            from model_pipeline import convert_to_image
+            temp_path = convert_to_image(image_path)
+            if temp_path and os.path.exists(temp_path):
+                st.image(temp_path, width=220)
+                return True
+        except Exception:
+            pass
 
-        st.info(f"🗂 File stored at: {image_path}")
         return False
     except Exception:
-        return None
+        return False
 
 def render_all_receipts():
     st.subheader("📂 All Employee Receipts")
@@ -484,7 +490,14 @@ def render_all_receipts():
     for r in rows:
         username, merchant, date, time, amount, category, was_corrected, uploaded_at, image_path, anomaly_status = r
         # Preview image (robust)
-        displayed = display_receipt(image_path)
+        try:
+            preview = convert_to_image(image_path)
+            if preview and os.path.exists(preview):
+                st.image(preview, width=220)
+            else:
+                st.info(f"🗂 File stored at: {image_path}")
+        except Exception:
+            st.warning(f"Unable to preview image. File stored at: {image_path}")
         if not displayed:
             st.caption(f"🗂 Stored path: {image_path}")
 
@@ -615,7 +628,7 @@ def render_anomaly():
         try:
             preview = convert_to_image(image_path)
             if preview and os.path.exists(preview):
-                st.image(preview, width=250)
+                st.image(preview, width=220)
             else:
                 st.info(f"🗂 File stored at: {image_path}")
         except Exception:
