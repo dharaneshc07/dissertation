@@ -68,14 +68,33 @@ def _get_secret(key: str, default: str | None = None) -> str | None:
     return os.getenv(key, default)
 
 def get_connection():
-    return psycopg2.connect(
-        dbname=_get_secret("DB_NAME", "postgres"),
-        user=_get_secret("DB_USER", "postgres"),
-        password=_get_secret("DB_PASSWORD", ""),
-        host=_get_secret("DB_HOST", "localhost"),
-        port=_get_secret("DB_PORT", "5432"),
-        sslmode="require"   # 🔑 Force SSL (Supabase needs this)
-    )
+    # Build DSN from secrets/env
+    host = _get_secret("DB_HOST", "localhost")
+    db   = _get_secret("DB_NAME", "postgres")
+    user = _get_secret("DB_USER", "postgres")
+    pw   = _get_secret("DB_PASSWORD", "")
+    port = _get_secret("DB_PORT", "5432")
+    ssl  = _get_secret("DB_SSLMODE", "require")
+
+    dsn = f"host={host} dbname={db} user={user} password={pw} port={port} sslmode={ssl}"
+    return psycopg2.connect(dsn)
+
+    def _probe_db():
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("select version();")
+                v = cur.fetchone()[0]
+        st.success(f"DB OK ✅ — {v}")
+    except Exception as e:
+        # Show details so we know which part fails
+        st.error(f"DB connection failed ❌: {type(e).__name__}: {e}")
+
+# Call it once on the landing page (before login form)
+if "page" not in st.session_state or st.session_state["page"] == "landing":
+    _probe_db()
+
+    
 def check_credentials(username, password):
     conn = get_connection()
     cur = conn.cursor()
