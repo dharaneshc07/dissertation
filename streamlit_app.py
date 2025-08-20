@@ -57,8 +57,15 @@ import psycopg2
 import psycopg2
 
 def get_connection():
-    url = _get_secret("DATABASE_URL")
-    return psycopg2.connect(url, sslmode="require")
+    # Always use discrete fields from secrets/env; ignore DATABASE_URL
+    return psycopg2.connect(
+        dbname=_get_secret("DB_NAME", "postgres"),
+        user=_get_secret("DB_USER", "postgres"),
+        password=_get_secret("DB_PASSWORD", ""),
+        host=_get_secret("DB_HOST", "localhost"),
+        port=_get_secret("DB_PORT", "5432"),
+        sslmode=_get_secret("DB_SSLMODE", "require"),  # Supabase needs SSL
+    )
 
 def check_credentials(username, password):
     conn = get_connection()
