@@ -35,18 +35,29 @@ for key, val in {"page": "landing", "role": None, "user": None, "enable_edit": F
 # =========================
 # Part 2: DB Connection & Auth
 # =========================
-from dotenv import load_dotenv
+# --- Part 2: DB Connection & Auth ---
+import os
 
-# Load .env file at the start
-load_dotenv()
+def _get_secret(name, default=None):
+    # Streamlit Cloud first, then env, then default
+    try:
+        import streamlit as st
+        if "secrets" in dir(st) and name in st.secrets:
+            return st.secrets[name]
+    except Exception:
+        pass
+    return os.getenv(name, default)
 
 def get_connection():
+    import psycopg2
     return psycopg2.connect(
-        dbname=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        host=os.getenv("DB_HOST"),
-        port=os.getenv("DB_PORT")
+        dbname=_get_secret("DB_NAME", "receipts_db"),
+        user=_get_secret("DB_USER", "postgres"),
+        password=_get_secret("DB_PASSWORD", ""),
+        host=_get_secret("DB_HOST", "localhost"),
+        port=_get_secret("DB_PORT", "5432"),
+        # Optional if your hosted DB requires SSL:
+        # sslmode=_get_secret("DB_SSLMODE", "require"),
     )
 
 def check_credentials(username, password):
