@@ -2,6 +2,7 @@
 # Imports & App Setup
 import re
 import os
+import shutil
 from datetime import datetime
 import bcrypt
 import joblib
@@ -83,13 +84,6 @@ def release_connection(conn):
 
 # --- Image preview helper ---
 def display_receipt(image_path: str) -> bool:
-    """
-    Try to show a preview for a stored receipt path.
-    Returns:
-      True  -> preview shown
-      False -> file exists but couldn't render
-      None  -> file/path not available here
-    """
     try:
         if not image_path:
             return None
