@@ -313,7 +313,6 @@ def insert_anomaly_feedback(username, merchant, date, time, amount, category, de
 
 
 
-# Upload UI & Prediction 
 def render_upload_ui(user):
     import uuid
     col1, col2 = st.columns(2)
@@ -325,7 +324,7 @@ def render_upload_ui(user):
 
     with col1:
         st.markdown("### 📤 Upload Receipt")
-        uploaded = st.file_uploader("Upload receipt", type=["jpg", "png", "jpeg", "pdf", "docx",])
+        uploaded = st.file_uploader("Upload receipt", type=["jpg", "png", "jpeg", "pdf", "docx"])
         if uploaded:
             # Persist file to disk
             ext = uploaded.name.split(".")[-1].lower()
@@ -335,33 +334,40 @@ def render_upload_ui(user):
             with open(raw_path, "wb") as f:
                 f.write(uploaded.read())
 
-            # preview and predict
             try:
-                predicted = {}
+                # Preview & prediction
                 tmp_img = convert_to_image(raw_path)
                 if not tmp_img or not os.path.exists(tmp_img):
-                    st.error(f"❌ Preview image was not generated.")
+                    st.error("❌ Could not generate preview image.")
                     return
 
-            # Store in session for the Submit click rerun
-            st.session_state.raw_path = raw_path
-            st.session_state.preview_path = preview_path
-            st.session_state.predicted = predicted or {}
+                preview_path = f"uploads/preview_{user}_{ts}_{uid}.jpg"
+                shutil.copy(tmp_img, preview_path)
 
-            # Show predicted 
-            for k, v in st.session_state.predicted.items():
-                if k in ("IForestLabel", "IForestScore"):
-                    continue
-                st.text_input(k, v, disabled=True, key=f"pred_{k}")
+                st.image(preview_path, caption="Uploaded Receipt", use_column_width=True)
+                predicted = predict_receipt(raw_path)
 
-            st.session_state.enable_edit = st.radio(
-                "Is the prediction accurate?", ["Yes", "Needs Correction"], index=0
-            ) == "Needs Correction"
+                # Store in session
+                st.session_state.raw_path = raw_path
+                st.session_state.preview_path = preview_path
+                st.session_state.predicted = predicted or {}
+
+                for k, v in st.session_state.predicted.items():
+                    if k in ("IForestLabel", "IForestScore"):
+                        continue
+                    st.text_input(k, v, disabled=True, key=f"pred_{k}")
+
+                st.session_state.enable_edit = st.radio(
+                    "Is the prediction accurate?", ["Yes", "Needs Correction"], index=0
+                ) == "Needs Correction"
+
+            except Exception as e:
+                st.error(f"❌ Error processing receipt: {e}")
+                return
 
     with col2:
         st.markdown("### ✏️ Confirm or Correct Details")
 
-        # Use predicted values as defaults
         p = st.session_state.predicted if isinstance(st.session_state.predicted, dict) else {}
 
         merchant = st.text_input("Merchant", p.get("Merchant", ""), disabled=not st.session_state.enable_edit, key="inp_merchant")
@@ -371,25 +377,18 @@ def render_upload_ui(user):
         category = st.selectbox(
             "Category",
             ["Food", "Travel", "Office Supplies", "Accommodation", "Other"],
-            index=0 if not p.get("Category") else  ["Food","Travel","Office Supplies","Accommodation","Other"].index(p.get("Category")) if p.get("Category") in ["Food","Travel","Office Supplies","Accommodation","Other"] else 0,
+            index=0 if not p.get("Category") else ["Food","Travel","Office Supplies","Accommodation","Other"].index(p.get("Category")) if p.get("Category") in ["Food","Travel","Office Supplies","Accommodation","Other"] else 0,
             disabled=not st.session_state.enable_edit,
             key="inp_category"
         )
 
         if st.button("Submit Receipt"):
-            # Use session-stored paths from the upload step
             final_path = st.session_state.preview_path
-
-            # Force storing a safe relative preview if possible
-            if st.session_state.preview_path:
-                final_path = st.session_state.preview_path
-
 
             if not final_path:
                 st.error("No uploaded file found. Please upload a receipt first.")
                 return
 
-            # When user said “Yes” , use predictions
             if not st.session_state.enable_edit:
                 merchant = p.get("Merchant", "")
                 date = p.get("Date", "")
@@ -397,7 +396,6 @@ def render_upload_ui(user):
                 amount = p.get("Amount", "")
                 category = p.get("Category", "Other")
 
-            # Minimal validation
             if not merchant or not amount:
                 st.error("Merchant and Amount are required.")
                 return
@@ -408,7 +406,6 @@ def render_upload_ui(user):
                 if st.session_state.enable_edit:
                     insert_corrected_receipt(user, merchant, date, time_, amount, category, final_path)
 
-                    # trigger feedback retrain
                     from model_pipeline import should_trigger_retraining, update_retrain_log, retrain_model, load_training_data_from_corrections
                     if should_trigger_retraining(get_connection):
                         df_fb = load_training_data_from_corrections(get_connection)
@@ -416,7 +413,7 @@ def render_upload_ui(user):
                         update_retrain_log(get_connection)
                         st.info("🔁 Model retrained using recent corrections.")
 
-                # Clear session vars after successful submit
+                # Clear session vars
                 st.session_state.raw_path = ""
                 st.session_state.preview_path = ""
                 st.session_state.predicted = {}
@@ -424,7 +421,6 @@ def render_upload_ui(user):
 
                 st.success("✅ Receipt saved successfully.")
             except Exception as e:
-                # Show full DB error to diagnose
                 st.exception(e)
 
 
