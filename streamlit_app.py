@@ -36,12 +36,53 @@ for key, val in {"page": "landing", "role": None, "user": None, "enable_edit": F
 
 
 # =========================
-# Part 2: Secrets & DB Connection
+# Part 2: DB Connection & Auth (single source of truth)
 # =========================
+import os
+import psycopg2
+from psycopg2.pool import SimpleConnectionPool
+
+def _get_secret(name: str, default: str | None = None) -> str | None:
+    """Streamlit secrets -> env var -> default."""
+    try:
+        if name in st.secrets:
+            return str(st.secrets[name])
+    except Exception:
+        pass
+    return os.getenv(name, default)
+
+@st.cache_resource(show_spinner=False)
+def init_db_pool() -> SimpleConnectionPool:
+    """Create a pooled connection (cached for the app lifetime)."""
+    return SimpleConnectionPool(
+        minconn=1,
+        maxconn=5,
+        dbname=_get_secret("DB_NAME", "postgres"),
+        user=_get_secret("DB_USER", "postgres"),
+        password=_get_secret("DB_PASSWORD", ""),
+        host=_get_secret("DB_HOST", "localhost"),
+        port=_get_secret("DB_PORT", "5432"),
+        sslmode=_get_secret("DB_SSLMODE", "require"),  # Supabase needs SSL
+    )
+
+def get_connection():
+    """Borrow a connection from the pool."""
+    try:
+        return init_db_pool().getconn()
+    except Exception as e:
+        st.error(f"DB connection failed ❌: {type(e).__name__}: {e}")
+        return None
+
+def release_connection(conn):
+    """Return a connection to the pool."""
+    if conn:
+        try:
+            init_db_pool().putconn(conn)
+        except Exception:
+            pass
+
 def check_credentials(username: str, password: str):
-    """
-    Return role ("admin"/"employee") if credentials are valid, else None.
-    """
+    """Return role ('admin'/'employee') if credentials are valid, else None."""
     conn = get_connection()
     if not conn:
         return None
@@ -50,22 +91,20 @@ def check_credentials(username: str, password: str):
         cur.execute("SELECT password_hash, role FROM users WHERE username = %s", (username,))
         row = cur.fetchone()
         cur.close()
-        if row:
-            pw_hash, role = row
-            if bcrypt.checkpw(password.encode(), pw_hash.encode()):
-                return role
     finally:
-        release_connection(conn)   # ✅ return connection to pool
+        release_connection(conn)
+
+    if row:
+        pw_hash, role = row
+        if bcrypt.checkpw(password.encode(), pw_hash.encode()):
+            return role
     return None
 
-
 def create_user(username: str, password: str, role: str):
-    """
-    Insert a new user. Shows Streamlit feedback directly.
-    """
+    """Insert a new user; show Streamlit feedback."""
     conn = get_connection()
     if not conn:
-        st.error("❌ No DB connection available")
+        st.error("No DB connection.")
         return
     try:
         cur = conn.cursor()
@@ -75,29 +114,25 @@ def create_user(username: str, password: str, role: str):
             (username, hashed, role),
         )
         conn.commit()
-        st.success(f"{role.title()} account created for '{username}'!")
         cur.close()
+        st.success(f"{role.title()} account created for '{username}'!")
     except Exception as e:
         conn.rollback()
         st.error(f"❌ Could not create user: {e}")
     finally:
-        release_connection(conn)   # ✅ return connection to pool
+        release_connection(conn)
 
-
-# ---- Test DB Connection (debug only, remove later) ----
-conn = get_connection()
-if conn:
+# Optional: quick self-test (safe no-op query). Leave it near the top.
+_conn = get_connection()
+if _conn:
     try:
-        cur = conn.cursor()
-        cur.execute("SELECT 1;")
-        st.success("DB OK ✅")
-        cur.close()
-    except Exception as e:
-        st.error(f"DB test failed ❌: {e}")
+        with _conn.cursor() as _c:
+            _c.execute("SELECT 1;")
+        st.caption("DB check: ✅ connected")
     finally:
-        release_connection(conn)   # ✅
+        release_connection(_conn)
 else:
-    st.error("Could not get DB connection ❌")
+    st.caption("DB check: ❌ failed (see error above)")
    
 # ========================
 # Part 3: DB Operations (Receipts, Feedback, Admin)
