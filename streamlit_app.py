@@ -28,6 +28,12 @@ st.set_page_config(
     layout="wide",
 )
 st.title("125 – 126 Agentic-AI to optimise expense submission process")
+st.caption(
+    "Using DB host: "
+    + str(_get_secret("DB_HOST", "?"))
+    + " | user: "
+    + str(_get_secret("DB_USER", "?"))
+)
 
 # Keep Streamlit session state minimal & consistent
 for key, val in {"page": "landing", "role": None, "user": None, "enable_edit": False}.items():
@@ -553,7 +559,7 @@ def render_analytics(user=None):
             autopct="%1.1f%%",
             startangle=90
         )
-        ax1.set_title("Monthly Spend (Approved/Rejected + Non‑Anomaly)")
+        ax1.set_title("Monthly Spend")
         st.pyplot(fig1)
     else:
         st.info("No monthly data available to display.")
@@ -563,7 +569,7 @@ def render_analytics(user=None):
     if not by_cat.empty:
         fig2, ax2 = plt.subplots()
         ax2.pie(by_cat.values, labels=by_cat.index, autopct="%1.1f%%", startangle=90)
-        ax2.set_title("Spend by Category (Approved/Rejected + Non‑Anomaly)")
+        ax2.set_title("Spend by Category")
         st.pyplot(fig2)
     else:
         st.info("No category data available to display.")
