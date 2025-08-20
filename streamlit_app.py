@@ -61,7 +61,6 @@ def get_connection():
         port=_get_secret("DB_PORT", "5432"),
         sslmode=_get_secret("DB_SSLMODE", "require")   # force SSL for Supabase
     )
-    )
 def check_credentials(username, password):
     conn = get_connection()
     cur = conn.cursor()
