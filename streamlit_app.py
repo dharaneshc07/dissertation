@@ -240,7 +240,7 @@ def render_upload_ui(user):
 
     with col1:
         st.markdown("### 📤 Upload Receipt")
-        uploaded = st.file_uploader("Upload receipt", type=["jpg", "png", "jpeg", "pdf", "docx", "heic"])
+        uploaded = st.file_uploader("Upload receipt", type=["jpg", "png", "jpeg", "pdf", "docx",])
         if uploaded:
             # Persist file to disk
             ext = uploaded.name.split(".")[-1].lower()
