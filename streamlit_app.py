@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import psycopg2
 import streamlit as st
+from zoneinfo import ZoneInfo
 
 from model_pipeline import (
     predict_receipt,
@@ -702,16 +703,31 @@ def render_correction_export():
         st.info("No corrected receipts available.")
         return
 
-    df = pd.DataFrame(rows, columns=[
-        "Username", "Merchant", "Date", "Time", "Amount", "Category", "Original Image", "Corrected At"
-    ])
+    df = pd.DataFrame(
+        rows,
+        columns=["Username", "Merchant", "Date", "Time", "Amount", "Category", "Original Image", "Corrected At"]
+    )
 
-    # 🔄 Convert UTC from DB → device local time
-    df["Corrected At"] = pd.to_datetime(df["Corrected At"]).dt.tz_localize("UTC").dt.tz_convert(None)
+    # Convert DB timestamps (assumed UTC) local display time
+    try:
+        tz_name = _get_secret("APP_TZ", "Europe/London")
+    except Exception:
+        tz_name = "Europe/London"
+    local_tz = ZoneInfo(tz_name)
+
+
+    ts_utc = pd.to_datetime(df["Corrected At"], errors="coerce", utc=True)
+    ts_local = ts_utc.dt.tz_convert(local_tz).dt.tz_localize(None)
+    df["Corrected At"] = ts_local
 
     st.dataframe(df)
     csv = df.to_csv(index=False).encode("utf-8")
-    st.download_button("📥 Download CSV", csv, "corrected_receipts.csv", "text/csv")
+    st.download_button(
+        "📥 Download CSV",
+        data=csv,
+        file_name="corrected_receipts.csv",
+        mime="text/csv"
+    )
 
 
 # Routing & Logout
