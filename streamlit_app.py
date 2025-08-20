@@ -1,6 +1,6 @@
-# =========================
-# Part 1: Imports & App Setup
-# =========================
+
+# Imports & App Setup
+
 import os
 import re
 import shutil
@@ -28,7 +28,7 @@ st.set_page_config(
     layout="wide",
 )
 st.title("125 – 126 Agentic-AI to optimise expense submission process")
-# Safe debug banner (optional)
+# Safe debug banner 
 try:
     st.caption(
         f"DB host: {_get_secret('DB_HOST','?')} | "
@@ -38,19 +38,16 @@ except Exception:
     pass
 
 
-# Keep Streamlit session state minimal & consistent
+# Keep Streamlit session consistent
 for key, val in {"page": "landing", "role": None, "user": None, "enable_edit": False}.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
 
-# =========================
-# Part 2: DB Connection & Auth (single source of truth)
-# =========================
-# =========================
-# DB helpers (pool + auth)
-# =========================
-# --- Secrets helper + DB pool (place right after imports) ---
+
+# DB Connection & Auth (single source of truth)
+
+# Secrets helper + DB pool
 import os, streamlit as st
 from psycopg2.pool import SimpleConnectionPool
 
@@ -150,7 +147,7 @@ def create_user(username: str, password: str, role: str):
     finally:
         release_connection(conn)
 
-# (optional) tiny connectivity banner (runs once per session)
+# tiny connectivity banner 
 if "db_checked" not in st.session_state:
     st.session_state.db_checked = True
     _c = get_connection()
@@ -164,9 +161,8 @@ if "db_checked" not in st.session_state:
         finally:
             release_connection(_c)
 
-# ========================
-# Part 3: DB Operations (Receipts, Feedback, Admin)
-# =========================
+# DB Operations (Receipts, Feedback, Admin)
+
 def insert_receipt(username, merchant, date, time, amount, category, was_corrected, image_path):
     conn = get_connection()
     cur = conn.cursor()
@@ -303,8 +299,8 @@ def insert_anomaly_feedback(username, merchant, date, time, amount, category, de
     conn.close()
 
 
-# =========================
-# --- Part 4: Upload UI & Prediction (robust) ---
+
+# Upload UI & Prediction 
 def render_upload_ui(user):
     import uuid
     col1, col2 = st.columns(2)
@@ -326,7 +322,7 @@ def render_upload_ui(user):
             with open(raw_path, "wb") as f:
                 f.write(uploaded.read())
 
-            # Convert/preview and predict
+            # preview and predict
             try:
                 tmp_img = convert_to_image(raw_path)
                 preview_path = f"uploads/preview_{user}_{ts}_{uid}.jpg"
@@ -343,7 +339,7 @@ def render_upload_ui(user):
             st.session_state.preview_path = preview_path
             st.session_state.predicted = predicted or {}
 
-            # Show predicted (read-only)
+            # Show predicted 
             for k, v in st.session_state.predicted.items():
                 st.text_input(k, v, disabled=True, key=f"pred_{k}")
 
@@ -377,7 +373,7 @@ def render_upload_ui(user):
                 st.error("No uploaded file found. Please upload a receipt first.")
                 return
 
-            # When user said “Yes” (accurate), use predictions
+            # When user said “Yes” , use predictions
             if not st.session_state.enable_edit:
                 merchant = p.get("Merchant", "")
                 date = p.get("Date", "")
@@ -396,7 +392,7 @@ def render_upload_ui(user):
                 if st.session_state.enable_edit:
                     insert_corrected_receipt(user, merchant, date, time_, amount, category, final_path)
 
-                    # Optional: trigger feedback retrain
+                    # trigger feedback retrain
                     from model_pipeline import should_trigger_retraining, update_retrain_log, retrain_model, load_training_data_from_corrections
                     if should_trigger_retraining(get_connection):
                         df_fb = load_training_data_from_corrections(get_connection)
@@ -412,13 +408,13 @@ def render_upload_ui(user):
 
                 st.success("✅ Receipt saved successfully.")
             except Exception as e:
-                # Show full DB error to diagnose (you can switch to st.error later)
+                # Show full DB error to diagnose
                 st.exception(e)
 
 
-# =========================
-# Part 5: Receipt History & Admin Views
-# =========================
+
+# Receipt History & Admin Views
+
 def render_receipts(user):
     st.subheader("📂 Your Receipt History")
     rows = fetch_receipts(user)
@@ -482,14 +478,14 @@ def render_all_receipts():
         st.divider()
 
 
-# =========================
+
 # Part 6: Analytics (Reviewed‑only, UK dates)
-# =========================
+
 def _normalize_review(v) -> str | None:
     if v is None:
         return None
     s = str(v).strip().lower()
-    s = re.sub(r"[^a-z]", "", s)   # "Approved ✅" -> "approved"
+    s = re.sub(r"[^a-z]", "", s)   
     return s if s in {"approved", "rejected"} else None
 
 def render_analytics(user=None):
@@ -511,7 +507,7 @@ def render_analytics(user=None):
     df = pd.DataFrame(rows, columns=columns)
     st.caption(f"Total rows loaded: {len(df)}")
 
-    # --- Clean Amount to numeric ---
+    # Clean Amount to numeric
     df["AmountVal"] = (
         df["Amount"].astype(str)
         .str.replace("£", "", regex=False)
@@ -520,17 +516,17 @@ def render_analytics(user=None):
     )
     df["AmountVal"] = pd.to_numeric(df["AmountVal"], errors="coerce")
 
-    # --- Normalize anomaly field ---
+    # Normalize anomaly field
     def _norm_anomaly(v):
         if v is None:
             return None
         s = str(v).strip().lower()
-        s = re.sub(r'[^a-z]', '', s)  # e.g. "Approved ✅" -> "approved"
+        s = re.sub(r'[^a-z]', '', s) 
         return s if s in ("approved", "rejected") else None
 
     df["AnomalyNorm"] = df["Anomaly"].apply(_norm_anomaly)
 
-    # --- Business rule: exclude only *pending* anomaly cases over the threshold ---
+    
     THRESHOLD = 100.0
     is_pending = df["Anomaly"].isna() | (df["Anomaly"].astype(str).str.strip().str.lower().isin(["", "none"]))
     pending_high = is_pending & (df["AmountVal"] > THRESHOLD)
@@ -543,7 +539,7 @@ def render_analytics(user=None):
         st.info("No receipts to show (pending high-value receipts are excluded until reviewed).")
         return
 
-    # --- Parse Date (UK dd/mm/yyyy first) & drop invalid ---
+    # Parse Date (UK dd/mm/yyyy first) & drop invalid
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce", dayfirst=True)
     df = df.dropna(subset=["Date", "AmountVal"]).copy()
 
@@ -551,7 +547,7 @@ def render_analytics(user=None):
         st.warning("No valid data to show after cleaning Date/Amount.")
         return
 
-    # --- Monthly spend (pie) ---
+    # Monthly spend 
     df["MonthPeriod"] = df["Date"].dt.to_period("M")
     monthly = df.groupby("MonthPeriod", sort=True)["AmountVal"].sum().sort_index()
     if not monthly.empty:
@@ -567,7 +563,7 @@ def render_analytics(user=None):
     else:
         st.info("No monthly data available to display.")
 
-    # --- Category spend (pie) ---
+    # Category spend (pie)
     by_cat = df.groupby("Category")["AmountVal"].sum().sort_values(ascending=False)
     if not by_cat.empty:
         fig2, ax2 = plt.subplots()
@@ -578,9 +574,9 @@ def render_analytics(user=None):
         st.info("No category data available to display.")
 
 
-# =========================
-# Part 7: Anomaly Review & Admin Tools
-# =========================
+
+# Anomaly Review & Admin Tools
+
 def render_anomaly():
     st.subheader("🚨 Anomaly Review (High-Value Receipts)")
     flagged = fetch_flagged_receipts()
@@ -625,7 +621,7 @@ def render_anomaly():
 def render_admin_controls():
     import re
 
-    THRESHOLD = 100.0  # keep this in one place so UI & logic match
+    THRESHOLD = 100.0 
     st.subheader("🧑‍💼 View Receipts by Employee")
 
     employees = fetch_users()
@@ -655,7 +651,6 @@ def render_admin_controls():
         st.write(f"**Merchant:** {merchant} | **Date:** {date} | **Time:** {time}")
         st.write(f"**Amount:** {amount} | **Category:** {category} | **Corrected:** {'Yes' if was_corrected else 'No'}")
 
-        # --- Parse numeric amount safely ---
         # strip currency symbols/commas and keep digits + dot
         amt_str = re.sub(r"[^\d.]", "", str(amount))
         try:
@@ -663,11 +658,11 @@ def render_admin_controls():
         except ValueError:
             amt_val = None
 
-        # --- Normalize anomaly_status for checks/display ---
+        # Normalize anomaly_status for checks/display 
         a = ("" if anomaly_status is None else str(anomaly_status)).strip().lower()
         has_decision = a not in ("", "none")  # approved/rejected stored here
 
-        # --- Correct decision logic ---
+       
         # Pending ONLY if no decision yet AND amount exceeds threshold
         needs_review = (not has_decision) and (amt_val is not None and amt_val > THRESHOLD)
 
@@ -706,17 +701,21 @@ def render_correction_export():
     if not rows:
         st.info("No corrected receipts available.")
         return
+
     df = pd.DataFrame(rows, columns=[
         "Username", "Merchant", "Date", "Time", "Amount", "Category", "Original Image", "Corrected At"
     ])
+
+    # 🔄 Convert UTC from DB → device local time
+    df["Corrected At"] = pd.to_datetime(df["Corrected At"]).dt.tz_localize("UTC").dt.tz_convert(None)
+
     st.dataframe(df)
     csv = df.to_csv(index=False).encode("utf-8")
     st.download_button("📥 Download CSV", csv, "corrected_receipts.csv", "text/csv")
 
 
-# =========================
-# Part 8: Routing & Logout
-# =========================
+# Routing & Logout
+
 def render_logout():
     if st.sidebar.button("🚪 Logout"):
         st.session_state.clear()
@@ -793,9 +792,9 @@ elif st.session_state.page == "dashboard":
             render_correction_export()
 
 
-# =========================
-# Part 9: (Optional) One‑click Feedback Model Trainer
-# =========================
+
+# One‑click Feedback Model Trainer
+
 def train_feedback_model():
     rows = get_corrected_receipts()
     if not rows:
