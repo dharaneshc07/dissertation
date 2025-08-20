@@ -33,7 +33,6 @@ psycopg2-binary==2.9.10
 pyarrow==21.0.0
 pycparser==2.22
 pydeck==0.9.1
-pyheif==0.8.0
 pyparsing==3.2.3
 pytesseract==0.3.13
 python-dateutil==2.9.0.post0
