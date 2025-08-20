@@ -67,7 +67,7 @@ def _get_secret(key: str, default: str | None = None) -> str | None:
         pass
     return os.getenv(key, default)
 
-ddef get_connection():
+def get_connection():
     try:
         return psycopg2.connect(
             dbname=_get_secret("DB_NAME", "postgres"),
