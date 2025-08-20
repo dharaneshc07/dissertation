@@ -56,17 +56,26 @@ import psycopg2
 
 import psycopg2
 
+import psycopg2
+import os, streamlit as st
+
+def _get_secret(key: str, default: str | None = None) -> str | None:
+    try:
+        if key in st.secrets:
+            return str(st.secrets[key])
+    except Exception:
+        pass
+    return os.getenv(key, default)
+
 def get_connection():
-    # Always use discrete fields from secrets/env; ignore DATABASE_URL
     return psycopg2.connect(
         dbname=_get_secret("DB_NAME", "postgres"),
         user=_get_secret("DB_USER", "postgres"),
         password=_get_secret("DB_PASSWORD", ""),
         host=_get_secret("DB_HOST", "localhost"),
         port=_get_secret("DB_PORT", "5432"),
-        sslmode=_get_secret("DB_SSLMODE", "require"),  # Supabase needs SSL
+        sslmode="require"   # 🔑 Force SSL (Supabase needs this)
     )
-
 def check_credentials(username, password):
     conn = get_connection()
     cur = conn.cursor()
