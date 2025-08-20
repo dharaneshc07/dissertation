@@ -86,7 +86,7 @@ def release_connection(conn):
     if conn:
         try:
             db_pool().putconn(conn)
-            st.write("✅ Connection returned to pool")
+            st.write("✅ ")
         except Exception as e:
             st.write(f"⚠️ Failed to return connection: {e}")
 
