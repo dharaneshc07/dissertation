@@ -87,34 +87,32 @@ from PIL import Image
 
 def display_receipt(image_path: str) -> bool:
     try:
-        if not image_path:
-            return None
+        if not image_path or not os.path.exists(image_path):
+            st.info(f"🗂 File stored at: {image_path}")
+            return False
 
-        st.text(f"⏳ Checking: {image_path}")
-
-        if os.path.exists(image_path):
-            try:
-                img = Image.open(image_path)
-                st.image(img, width=220)
-                return True
-            except Exception as e:
-                st.warning(f"❌ Failed to load image: {e}")
-                return False
-
-        # Try fallback preview conversion
+        # Attempt to open the image directly
         try:
-            preview = convert_to_image(image_path)
-            if preview and os.path.exists(preview):
-                img = Image.open(preview)
+            img = Image.open(image_path)
+            st.image(img, width=220)
+            return True
+        except:
+            pass
+
+        # Try conversion fallback
+        try:
+            converted = convert_to_image(image_path)
+            if converted and os.path.exists(converted):
+                img = Image.open(converted)
                 st.image(img, width=220)
                 return True
-        except Exception as e:
-            st.warning(f"❌ Failed to convert preview: {e}")
+        except:
+            pass
 
         st.info(f"🗂 File stored at: {image_path}")
         return False
-    except Exception:
-        return None
+    except:
+        return False
 
 def check_credentials(username: str, password: str):
     """
@@ -463,12 +461,11 @@ def render_all_receipts():
     if not rows:
         st.info("No receipts found.")
         return
+
     for r in rows:
         username, merchant, date, time, amount, category, was_corrected, uploaded_at, image_path, anomaly_status = r
 
         displayed = display_receipt(image_path)
-        if not displayed:
-            st.caption(f"🗂 File stored at: {image_path}")
 
         st.write(f"**User:** {username} | **Merchant:** {merchant} | **Date:** {date} | **Time:** {time}")
         st.write(f"**Amount:** {amount} | **Category:** {category} | **Corrected:** {'Yes' if was_corrected else 'No'}")
@@ -483,7 +480,6 @@ def render_all_receipts():
             if amt_val > 100:
                 st.warning("⚠️ Anomaly decision pending")
         st.divider()
-
 
 
 # Part 6: Analytics (Reviewed‑only, UK dates)
