@@ -337,6 +337,7 @@ def render_upload_ui(user):
             st.write(f"🛠 Saved file: {raw_path} — Exists: {os.path.exists(raw_path)}")
 
             # preview and predict
+            predicted = {}
             try:
                 st.write("📂 Raw path:", raw_path)
                 tmp_img = convert_to_image(raw_path)
@@ -346,23 +347,16 @@ def render_upload_ui(user):
                 if not tmp_img or not os.path.exists(tmp_img):
                     st.error(f"❌ Preview image was not generated: {tmp_img}")
                     return
-
                 preview_path = f"uploads/preview_{user}_{ts}_{uid}.jpg"
                 shutil.copy(tmp_img, preview_path)
-                if not os.path.exists(preview_path):
-                    st.warning(f"Preview file missing: {preview_path}")
-                else:
-                    st.success(f"✅ Preview created at: {preview_path}")
 
                 st.image(preview_path, caption="Uploaded Receipt", use_column_width=True)
-
+                predicted = predict_receipt(raw_path)
             except Exception as e:
-                st.exception(e)
+                st.error(f"❌ Prediction error: {e}")
                 return
 
-                preview_path = f"uploads/preview_{user}_{ts}_{uid}.jpg"
-                shutil.copy(tmp_img, preview_path)
-                st.image(preview_path, caption="Uploaded Receipt", use_column_width=True)
+
             except Exception as e:
                 st.error(f"❌ Failed to create preview: {e}")
                 return
