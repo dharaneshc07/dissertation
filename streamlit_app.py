@@ -457,28 +457,22 @@ def render_upload_ui(user):
 def display_receipt(image_path: str) -> bool:
     try:
         if not image_path:
+            st.warning("⚠️ No image path provided.")
             return False
 
-        # Prefer showing the saved preview if available
-        if os.path.exists(image_path):
-            try:
-                st.image(image_path, width=220)
-                return True
-            except Exception:
-                pass
+        if not os.path.exists(image_path):
+            st.warning(f"⚠️ Path not found: {image_path}")
+            return False
 
-        # Fallback: convert using model pipeline helper
         try:
-            from model_pipeline import convert_to_image
-            temp_path = convert_to_image(image_path)
-            if temp_path and os.path.exists(temp_path):
-                st.image(temp_path, width=220)
-                return True
-        except Exception:
-            pass
-
-        return False
-    except Exception:
+            img = Image.open(image_path)
+            st.image(img, width=220)
+            return True
+        except Exception as e:
+            st.error(f"❌ Could not open image: {e}")
+            return False
+    except Exception as e:
+        st.error(f"⚠️ Preview failed: {e}")
         return False
 
 def render_all_receipts():
