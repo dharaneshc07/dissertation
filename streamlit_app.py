@@ -38,56 +38,34 @@ for key, val in {"page": "landing", "role": None, "user": None, "enable_edit": F
 # =========================
 # Part 2: DB Connection & Auth (single source of truth)
 # =========================
-# --- DB (Supabase Pooler via psycopg2) ---
 from psycopg2.pool import SimpleConnectionPool
-
-def _sec(k, d=None):
-    try:
-        if k in st.secrets:
-            return str(st.secrets[k])
-    except Exception:
-        pass
-    return os.getenv(k, d)
 
 @st.cache_resource(show_spinner=False)
 def db_pool():
     return SimpleConnectionPool(
-        minconn=1, maxconn=5,
-        dbname=_sec("DB_NAME", "postgres"),
-        user=_sec("DB_USER", "postgres"),
-        password=_sec("DB_PASSWORD", ""),
-        host=_sec("DB_HOST", "localhost"),
-        port=_sec("DB_PORT", "5432"),
-        sslmode=_sec("DB_SSLMODE", "require"),
-        connect_timeout=10,
-        keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=5,
+        minconn=1,
+        maxconn=5,
+        dbname=_get_secret("DB_NAME", "neondb"),
+        user=_get_secret("DB_USER", "neondb_owner"),
+        password=_get_secret("DB_PASSWORD", ""),
+        host=_get_secret("DB_HOST", "localhost"),
+        port=_get_secret("DB_PORT", "5432"),
+        sslmode=_get_secret("DB_SSLMODE", "require")
     )
 
 def get_connection():
-    return db_pool().getconn()
+    try:
+        return db_pool().getconn()
+    except Exception as e:
+        st.error(f"DB connection failed ❌: {e}")
+        return None
 
 def release_connection(conn):
     if conn:
-        db_pool().putconn(conn)
-
-# (Optional) one-time health check near the top of your app
-# --- One‑time DB connectivity self‑test (optional) ---
-_conn = None
-try:
-    _conn = get_connection()
-    if _conn is None:
-        st.error("DB connection failed ❌ (got None). Check secrets/host/port/SSL.")
-    else:
-        cur = _conn.cursor()
-        cur.execute("SELECT 1;")
-        cur.close()
-        st.success("DB OK ✅ (pooled connection works)")
-except Exception as e:
-    st.error(f"DB connectivity check: ❌ {type(e).__name__}: {e}")
-finally:
-    if _conn is not None:
-        release_connection(_conn)
-
+        try:
+            db_pool().putconn(conn)
+        except Exception:
+            pass
 def create_user(username: str, password: str, role: str):
     """Insert a new user; show Streamlit feedback."""
     conn = get_connection()
