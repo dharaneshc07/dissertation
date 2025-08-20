@@ -49,15 +49,13 @@ def _get_secret(name, default=None):
     return os.getenv(name, default)
 
 def get_connection():
-    import psycopg2
     return psycopg2.connect(
-        dbname=_get_secret("DB_NAME", "receipts_db"),
+        dbname=_get_secret("DB_NAME", "postgres"),
         user=_get_secret("DB_USER", "postgres"),
         password=_get_secret("DB_PASSWORD", ""),
         host=_get_secret("DB_HOST", "localhost"),
         port=_get_secret("DB_PORT", "5432"),
-        # Optional if your hosted DB requires SSL:
-        # sslmode=_get_secret("DB_SSLMODE", "require"),
+        sslmode=_get_secret("DB_SSLMODE", "require")  
     )
 
 def check_credentials(username, password):
