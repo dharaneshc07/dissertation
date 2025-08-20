@@ -334,37 +334,16 @@ def render_upload_ui(user):
             raw_path = f"uploads/{user}_{ts}_{uid}.{ext}"
             with open(raw_path, "wb") as f:
                 f.write(uploaded.read())
-
+s
+            # preview and predict
             # preview and predict
             predicted = {}
             try:
-                
                 tmp_img = convert_to_image(raw_path)
-                
-                
 
                 if not tmp_img or not os.path.exists(tmp_img):
-                    st.error(f"❌ Preview image was not generated: {tmp_img}")
+                    st.error(f"❌ Preview image was not generated.")
                     return
-                preview_path = f"uploads/preview_{user}_{ts}_{uid}.jpg"
-                shutil.copy(tmp_img, preview_path)
-
-                st.image(preview_path, caption="Uploaded Receipt", use_column_width=True)
-                predicted = predict_receipt(raw_path)
-            except Exception as e:
-                st.error(f"❌ Prediction error: {e}")
-                return
-
-
-            except Exception as e:
-                st.error(f"❌ Failed to create preview: {e}")
-                return
-
-                st.image(preview_path, caption="Uploaded Receipt", use_column_width=True)
-                predicted = predict_receipt(raw_path)
-            except Exception as e:
-                st.error(f"❌ Prediction error: {e}")
-                return
 
             # Store in session for the Submit click rerun
             st.session_state.raw_path = raw_path
@@ -454,26 +433,35 @@ def render_upload_ui(user):
 
 # Receipt History & Admin Views
 
-def display_receipt(image_path: str) -> bool:
-    try:
-        if not image_path:
-            st.warning("⚠️ No image path provided.")
-            return False
+from PIL import Image
 
-        if not os.path.exists(image_path):
-            st.warning(f"⚠️ Path not found: {image_path}")
-            return False
+def render_receipts(user):
+    st.subheader("📂 Your Receipt History")
+    rows = fetch_receipts(user)
+    if not rows:
+        st.info("No receipts found.")
+        return
+    for r in rows:
+        merchant, date, time, amount, category, was_corrected, uploaded_at, image_path, anomaly_status = r
+        
+        displayed = display_receipt(image_path)
+        if not displayed:
+            st.caption(f"🗂 File stored at: {image_path}")
+
+        st.write(f"**Merchant:** {merchant} | **Date:** {date} | **Time:** {time}")
+        st.write(f"**Amount:** {amount} | **Category:** {category} | **Corrected:** {'Yes' if was_corrected else 'No'}")
 
         try:
-            img = Image.open(image_path)
-            st.image(img, width=220)
-            return True
-        except Exception as e:
-            st.error(f"❌ Could not open image: {e}")
-            return False
-    except Exception as e:
-        st.error(f"⚠️ Preview failed: {e}")
-        return False
+            amt_val = float(str(amount).replace("£", "").replace(",", ""))
+        except:
+            amt_val = 0.0
+
+        if anomaly_status:
+            st.info(f"🔎 Anomaly Decision: **{str(anomaly_status).upper()}**")
+        elif amt_val > 100:
+            st.warning("⚠️ Anomaly review is pending for this receipt.")
+        st.divider()
+        
 
 def render_all_receipts():
     st.subheader("📂 All Employee Receipts")
@@ -483,17 +471,10 @@ def render_all_receipts():
         return
     for r in rows:
         username, merchant, date, time, amount, category, was_corrected, uploaded_at, image_path, anomaly_status = r
-        # Preview image (robust)
-        try:
-            preview = convert_to_image(image_path)
-            if preview and os.path.exists(preview):
-                st.image(preview, width=220)
-            else:
-                st.info(f"🗂 File stored at: {image_path}")
-        except Exception:
-            st.warning(f"Unable to preview image. File stored at: {image_path}")
+
+        displayed = display_receipt(image_path)
         if not displayed:
-            st.caption(f"🗂 Stored path: {image_path}")
+            st.caption(f"🗂 File stored at: {image_path}")
 
         st.write(f"**User:** {username} | **Merchant:** {merchant} | **Date:** {date} | **Time:** {time}")
         st.write(f"**Amount:** {amount} | **Category:** {category} | **Corrected:** {'Yes' if was_corrected else 'No'}")
@@ -619,14 +600,9 @@ def render_anomaly():
         (rid, username, merchant, date, time, amount, category,
          uploaded_at, image_path, anomaly_status) = row
 
-        try:
-            preview = convert_to_image(image_path)
-            if preview and os.path.exists(preview):
-                st.image(preview, width=220)
-            else:
-                st.info(f"🗂 File stored at: {image_path}")
-        except Exception:
-            st.warning(f"Unable to preview image. File stored at: {image_path}")
+        displayed = display_receipt(image_path)
+        if not displayed:
+            st.caption(f"🗂 File stored at: {image_path}")
 
         st.write(f"**Employee:** {username}")
         st.write(f"**Merchant:** {merchant} | **Date:** {date} | **Time:** {time}")
@@ -635,19 +611,20 @@ def render_anomaly():
         if anomaly_status is None:
             col1, col2 = st.columns(2)
             with col1:
-                if st.button(f"✅ Approve "):
+                if st.button(f"✅ Approve ", key=f"approve_{rid}"):
                     update_anomaly_status_by_id(rid, "approved")
                     insert_anomaly_feedback(username, merchant, date, time, amount, category, "approved", uploaded_at)
                     st.success("Marked as APPROVED.")
                     st.rerun()
             with col2:
-                if st.button(f"❌ Reject"): 
+                if st.button(f"❌ Reject", key=f"reject_{rid}"): 
                     update_anomaly_status_by_id(rid, "rejected")
                     insert_anomaly_feedback(username, merchant, date, time, amount, category, "rejected", uploaded_at)
                     st.warning("Marked as REJECTED.")
                     st.rerun()
         else:
             st.success(f"✔️ Already reviewed: **{anomaly_status.upper()}**")
+        st.divider()
             
 def render_admin_controls():
   
