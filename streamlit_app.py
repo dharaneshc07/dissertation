@@ -51,16 +51,15 @@ def _get_secret(name, default=None):
         pass
     return os.getenv(name, default)
 
+import os
+import psycopg2
+
+import psycopg2
+
 def get_connection():
-    return psycopg2.connect(
-        host=_get_secret("DB_HOST"),
-        dbname=_get_secret("DB_NAME"),
-        user=_get_secret("DB_USER"),
-        password=_get_secret("DB_PASSWORD"),
-        port=_get_secret("DB_PORT", "5432"),
-        sslmode="require"   # <-- force SSL always
-    )
-    
+    url = _get_secret("DATABASE_URL")
+    return psycopg2.connect(url, sslmode="require")
+
 def check_credentials(username, password):
     conn = get_connection()
     cur = conn.cursor()
