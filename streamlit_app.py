@@ -67,7 +67,7 @@ def _get_secret(name: str, default: str | None = None) -> str | None:
 def db_pool() -> SimpleConnectionPool:
     return SimpleConnectionPool(
         minconn=1,
-        maxconn=5,
+        maxconn=50,
         dbname=_get_secret("DB_NAME", "neondb"),
         user=_get_secret("DB_USER", "neondb_owner"),
         password=_get_secret("DB_PASSWORD", ""),
@@ -88,6 +88,21 @@ def release_connection(conn):
     if conn:
         try:
             db_pool().putconn(conn)
+            st.write("✅ Connection returned to pool")
+        except Exception as e:
+            st.write(f"⚠️ Failed to return connection: {e}")
+
+from contextlib import contextmanager
+
+@contextmanager
+def get_conn():
+    pool = db_pool()
+    conn = pool.getconn()
+    try:
+        yield conn
+    finally:
+        try:
+            pool.putconn(conn)
         except Exception:
             pass
 
