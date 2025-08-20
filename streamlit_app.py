@@ -65,21 +65,35 @@ def init_db_pool() -> SimpleConnectionPool:
         sslmode=_get_secret("DB_SSLMODE", "require"),  # Supabase needs SSL
     )
 
-def get_connection():
-    """Borrow a connection from the pool."""
+import os, psycopg2, streamlit as st
+from psycopg2.pool import SimpleConnectionPool
+
+def _sec(k, default=None):
     try:
-        return init_db_pool().getconn()
-    except Exception as e:
-        st.error(f"DB connection failed ❌: {type(e).__name__}: {e}")
-        return None
+        if k in st.secrets: 
+            return st.secrets[k]
+    except Exception:
+        pass
+    return os.getenv(k, default)
+
+@st.cache_resource
+def db_pool():
+    return SimpleConnectionPool(
+        minconn=1, maxconn=5,
+        dbname=_sec("DB_NAME", "postgres"),
+        user=_sec("DB_USER", "postgres"),
+        password=_sec("DB_PASSWORD", ""),
+        host=_sec("DB_HOST", "localhost"),
+        port=_sec("DB_PORT", "6543"),        # ← pooler port
+        sslmode=_sec("DB_SSLMODE", "require")
+    )
+
+def get_connection():
+    return db_pool().getconn()
 
 def release_connection(conn):
-    """Return a connection to the pool."""
     if conn:
-        try:
-            init_db_pool().putconn(conn)
-        except Exception:
-            pass
+        db_pool().putconn(conn)
 
 def check_credentials(username: str, password: str):
     """Return role ('admin'/'employee') if credentials are valid, else None."""
