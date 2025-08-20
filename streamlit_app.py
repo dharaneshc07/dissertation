@@ -330,8 +330,16 @@ def render_upload_ui(user):
             # preview and predict
             try:
                 tmp_img = convert_to_image(raw_path)
+                if not os.path.exists(tmp_img):
+                    st.error("❌ Preview image was not generated.")
+                    return
+
                 preview_path = f"uploads/preview_{user}_{ts}_{uid}.jpg"
                 shutil.copy(tmp_img, preview_path)
+                st.image(preview_path, caption="Uploaded Receipt", use_column_width=True)
+            except Exception as e:
+                st.error(f"❌ Failed to create preview: {e}")
+                return
 
                 st.image(preview_path, caption="Uploaded Receipt", use_column_width=True)
                 predicted = predict_receipt(raw_path)
