@@ -38,54 +38,31 @@ for key, val in {"page": "landing", "role": None, "user": None, "enable_edit": F
 # =========================
 # Part 2: DB Connection & Auth (single source of truth)
 # =========================
-import os
-import psycopg2
-from psycopg2.pool import SimpleConnectionPool
-
-def _get_secret(name: str, default: str | None = None) -> str | None:
-    """Streamlit secrets -> env var -> default."""
-    try:
-        if name in st.secrets:
-            return str(st.secrets[name])
-    except Exception:
-        pass
-    return os.getenv(name, default)
-
-@st.cache_resource(show_spinner=False)
-def init_db_pool() -> SimpleConnectionPool:
-    """Create a pooled connection (cached for the app lifetime)."""
-    return SimpleConnectionPool(
-        minconn=1,
-        maxconn=5,
-        dbname=_get_secret("DB_NAME", "postgres"),
-        user=_get_secret("DB_USER", "postgres"),
-        password=_get_secret("DB_PASSWORD", ""),
-        host=_get_secret("DB_HOST", "localhost"),
-        port=_get_secret("DB_PORT", "5432"),
-        sslmode=_get_secret("DB_SSLMODE", "require"),  # Supabase needs SSL
-    )
-
+# --- DB (Supabase Pooler via psycopg2) ---
 import os, psycopg2, streamlit as st
 from psycopg2.pool import SimpleConnectionPool
 
-def _sec(k, default=None):
+def _sec(k: str, default: str | None = None) -> str | None:
+    # Prefer Streamlit secrets, else env var, else default
     try:
-        if k in st.secrets: 
-            return st.secrets[k]
+        if k in st.secrets:
+            return str(st.secrets[k])
     except Exception:
         pass
     return os.getenv(k, default)
 
-@st.cache_resource
-def db_pool():
+@st.cache_resource(show_spinner=False)
+def db_pool() -> SimpleConnectionPool:
+    # Use the **Transaction Pooler** (IPv4, port 6543)
     return SimpleConnectionPool(
-        minconn=1, maxconn=5,
+        minconn=1,
+        maxconn=5,
+        host=_sec("DB_HOST", "localhost"),
+        port=int(_sec("DB_PORT", "5432")),
         dbname=_sec("DB_NAME", "postgres"),
         user=_sec("DB_USER", "postgres"),
         password=_sec("DB_PASSWORD", ""),
-        host=_sec("DB_HOST", "localhost"),
-        port=_sec("DB_PORT", "6543"),        # ← pooler port
-        sslmode=_sec("DB_SSLMODE", "require")
+        sslmode=_sec("DB_SSLMODE", "require"),
     )
 
 def get_connection():
@@ -94,6 +71,19 @@ def get_connection():
 def release_connection(conn):
     if conn:
         db_pool().putconn(conn)
+
+# Quick self-test in the sidebar (safe: no password shown)
+with st.sidebar:
+    st.caption("DB connectivity check")
+    st.write(f"Host: {_sec('DB_HOST','?')}  |  Port: {_sec('DB_PORT','?')}")
+    try:
+        _conn = get_connection()
+        with _conn.cursor() as c:
+            c.execute("SELECT 1;")
+        release_connection(_conn)
+        st.success("DB OK ✅")
+    except Exception as e:
+        st.error(f"DB FAIL ❌: {type(e).__name__}")
 
 def check_credentials(username: str, password: str):
     """Return role ('admin'/'employee') if credentials are valid, else None."""
@@ -136,17 +126,6 @@ def create_user(username: str, password: str, role: str):
     finally:
         release_connection(conn)
 
-# Optional: quick self-test (safe no-op query). Leave it near the top.
-_conn = get_connection()
-if _conn:
-    try:
-        with _conn.cursor() as _c:
-            _c.execute("SELECT 1;")
-        st.caption("DB check: ✅ connected")
-    finally:
-        release_connection(_conn)
-else:
-    st.caption("DB check: ❌ failed (see error above)")
    
 # ========================
 # Part 3: DB Operations (Receipts, Feedback, Admin)
