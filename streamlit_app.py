@@ -334,13 +334,11 @@ def render_upload_ui(user):
             raw_path = f"uploads/{user}_{ts}_{uid}.{ext}"
             with open(raw_path, "wb") as f:
                 f.write(uploaded.read())
-s
-            # preview and predict
-            # preview and predict
-            predicted = {}
-            try:
-                tmp_img = convert_to_image(raw_path)
 
+            # preview and predict
+            try:
+                predicted = {}
+                tmp_img = convert_to_image(raw_path)
                 if not tmp_img or not os.path.exists(tmp_img):
                     st.error(f"❌ Preview image was not generated.")
                     return
