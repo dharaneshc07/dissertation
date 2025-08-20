@@ -326,11 +326,13 @@ def render_upload_ui(user):
             raw_path = f"uploads/{user}_{ts}_{uid}.{ext}"
             with open(raw_path, "wb") as f:
                 f.write(uploaded.read())
+            st.write(f"🛠 Saved file: {raw_path} — Exists: {os.path.exists(raw_path)}")
 
             # preview and predict
             try:
                 st.write("📂 Raw path:", raw_path)
                 tmp_img = convert_to_image(raw_path)
+                st.write(f"🔁 Temp image from convert_to_image: {tmp_img} — Exists: {os.path.exists(tmp_img)}")
                 st.write("🖼️ Temp image path:", tmp_img)
 
                 if not tmp_img or not os.path.exists(tmp_img):
@@ -446,32 +448,25 @@ def render_upload_ui(user):
 
 # Receipt History & Admin Views
 
-def render_receipts(user):
-    st.subheader("📂 Your Receipt History")
-    rows = fetch_receipts(user)
-    if not rows:
-        st.info("No receipts found.")
-        return
-    for r in rows:
-        merchant, date, time, amount, category, was_corrected, uploaded_at, image_path, anomaly_status = r
-        # Preview image (robust)
-        displayed = display_receipt(image_path)
-        if not displayed:
-            st.caption(f"🗂 Stored path: {image_path}")
+def display_receipt(image_path: str) -> bool:
+    try:
+        if not image_path:
+            return None
+        # If local and exists, show directly
+        if os.path.exists(image_path):
+            st.image(image_path, width=220)
+            return True
 
-        st.write(f"**Merchant:** {merchant} | **Date:** {date} | **Time:** {time}")
-        st.write(f"**Amount:** {amount} | **Category:** {category} | **Corrected:** {'Yes' if was_corrected else 'No'}")
+        # Convert other formats if needed
+        preview = convert_to_image(image_path)
+        if preview and os.path.exists(preview):
+            st.image(preview, width=220)
+            return True
 
-        try:
-            amt_val = float(str(amount).replace("£", "").replace(",", ""))
-        except:
-            amt_val = 0.0
-
-        if anomaly_status:
-            st.info(f"🔎 Anomaly Decision: **{str(anomaly_status).upper()}**")
-        elif amt_val > 100:
-            st.warning("⚠️ Anomaly review is pending for this receipt.")
-        st.divider()
+        st.info(f"🗂 File stored at: {image_path}")
+        return False
+    except Exception:
+        return None
 
 def render_all_receipts():
     st.subheader("📂 All Employee Receipts")
