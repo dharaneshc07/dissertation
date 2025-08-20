@@ -23,137 +23,83 @@ from model_pipeline import (
     update_retrain_log,
 )
 
-st.set_page_config(page_title="125 – 126 Agentic-AI to optimise expense submission process", layout="wide")
+st.set_page_config(
+    page_title="125 – 126 Agentic-AI to optimise expense submission process",
+    layout="wide",
+)
 st.title("125 – 126 Agentic-AI to optimise expense submission process")
 
-import os, streamlit as st
-
-
-# Initialize session state
+# Keep Streamlit session state minimal & consistent
 for key, val in {"page": "landing", "role": None, "user": None, "enable_edit": False}.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
 
 # =========================
-# Part 2: DB Connection & Auth
+# Part 2: Secrets & DB Connection
 # =========================
-# --- Part 2: DB Connection & Auth ---
-import os
-
-def _get_secret(name, default=None):
-    # Streamlit Cloud first, then env, then default
-    try:
-        import streamlit as st
-        if "secrets" in dir(st) and name in st.secrets:
-            return st.secrets[name]
-    except Exception:
-        pass
-    return os.getenv(name, default)
-
-import os
-import psycopg2
-
-import psycopg2
-
-import psycopg2
-import os, streamlit as st
-
-def _get_secret(key: str, default: str | None = None) -> str | None:
-    try:
-        if key in st.secrets:
-            return str(st.secrets[key])
-    except Exception:
-        pass
-    return os.getenv(key, default)
-
-import socket
-
-def get_connection():
-    import psycopg2, os
-    # Prefer a single URL if you ever add it later
-    url = st.secrets.get("DATABASE_URL", os.getenv("DATABASE_URL"))
-    try:
-        if url:
-            # Force SSL, add timeout
-            return psycopg2.connect(url, sslmode="require", connect_timeout=10)
-
-        # Otherwise use discrete fields
-        dbname = _get_secret("DB_NAME", "postgres")
-        user = _get_secret("DB_USER", "postgres")
-        pwd = _get_secret("DB_PASSWORD", "")
-        host = _get_secret("DB_HOST", "localhost")
-        port = int(_get_secret("DB_PORT", "5432"))
-
-        # Force SSL for Supabase, add timeout
-        return psycopg2.connect(
-            dbname=dbname,
-            user=user,
-            password=pwd,
-            host=host,
-            port=port,
-            sslmode="require",
-            connect_timeout=10,
-        )
-    except Exception as e:
-        # Show a compact, safe hint in the UI, log the real error in console
-        st.error("DB connection failed ❌. Check secrets & network.")
-        st.caption(
-            f"Host: {host}, Port: {port}, DB: {dbname}, User: {user} (password hidden)."
-        )
-        # Print full details to server logs (visible in Streamlit “Manage app → Logs”)
-        print("DB connection error:", repr(e))
-        return None
-
-def _probe_db():
-    try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("select version();")
-                v = cur.fetchone()[0]
-        st.success(f"DB OK ✅ — {v}")
-    except Exception as e:
-        # Show details so we know which part fails
-        st.error(f"DB connection failed ❌: {type(e).__name__}: {e}")    
-
-# Call it once on the landing page (before login form)
-if "page" not in st.session_state or st.session_state["page"] == "landing":
-    _probe_db()
-
-
-def check_credentials(username, password):
+def check_credentials(username: str, password: str):
+    """
+    Return role ("admin"/"employee") if credentials are valid, else None.
+    """
     conn = get_connection()
-    if conn is None:
-        return None  # short-circuit if DB is unreachable
-
-    cur = conn.cursor()
-    cur.execute("SELECT password_hash, role FROM users WHERE username = %s", (username,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    if row and bcrypt.checkpw(password.encode(), row[0].encode()):
-        return row[1]
+    if not conn:
+        return None
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT password_hash, role FROM users WHERE username = %s", (username,))
+        row = cur.fetchone()
+        cur.close()
+        if row:
+            pw_hash, role = row
+            if bcrypt.checkpw(password.encode(), pw_hash.encode()):
+                return role
+    finally:
+        release_connection(conn)   # ✅ return connection to pool
     return None
 
-def create_user(username, password, role):
+
+def create_user(username: str, password: str, role: str):
+    """
+    Insert a new user. Shows Streamlit feedback directly.
+    """
     conn = get_connection()
-    cur = conn.cursor()
-    hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    if not conn:
+        st.error("❌ No DB connection available")
+        return
     try:
+        cur = conn.cursor()
+        hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
         cur.execute(
             "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
-            (username, hashed_pw, role)
+            (username, hashed, role),
         )
         conn.commit()
         st.success(f"{role.title()} account created for '{username}'!")
-    except psycopg2.errors.UniqueViolation:
+        cur.close()
+    except Exception as e:
         conn.rollback()
-        st.error("❌ Username already exists.")
-    cur.close()
-    conn.close()
+        st.error(f"❌ Could not create user: {e}")
+    finally:
+        release_connection(conn)   # ✅ return connection to pool
 
 
-# =========================
+# ---- Test DB Connection (debug only, remove later) ----
+conn = get_connection()
+if conn:
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT 1;")
+        st.success("DB OK ✅")
+        cur.close()
+    except Exception as e:
+        st.error(f"DB test failed ❌: {e}")
+    finally:
+        release_connection(conn)   # ✅
+else:
+    st.error("Could not get DB connection ❌")
+   
+# ========================
 # Part 3: DB Operations (Receipts, Feedback, Admin)
 # =========================
 def insert_receipt(username, merchant, date, time, amount, category, was_corrected, image_path):
