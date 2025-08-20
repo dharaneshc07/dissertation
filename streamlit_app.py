@@ -1,20 +1,15 @@
 
 # Imports & App Setup
-
-import os
 import re
-import shutil
+import os
 from datetime import datetime
-
 import bcrypt
 import joblib
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
-import psycopg2
 import streamlit as st
 from zoneinfo import ZoneInfo
-
+from psycopg2.pool import SimpleConnectionPool
 from model_pipeline import (
     predict_receipt,
     convert_to_image,
@@ -29,15 +24,6 @@ st.set_page_config(
     layout="wide",
 )
 st.title("125 – 126 Agentic-AI to optimise expense submission process")
-# Safe debug banner 
-try:
-    st.caption(
-        f"DB host: {_get_secret('DB_HOST','?')} | "
-        f"port: {_get_secret('DB_PORT','?')}"
-    )
-except Exception:
-    pass
-
 
 # Keep Streamlit session consistent
 for key, val in {"page": "landing", "role": None, "user": None, "enable_edit": False}.items():
@@ -49,8 +35,7 @@ for key, val in {"page": "landing", "role": None, "user": None, "enable_edit": F
 # DB Connection & Auth (single source of truth)
 
 # Secrets helper + DB pool
-import os, streamlit as st
-from psycopg2.pool import SimpleConnectionPool
+ 
 
 def _get_secret(name: str, default: str | None = None) -> str | None:
     """Prefer Streamlit secrets first, then environment variables."""
@@ -83,105 +68,18 @@ def get_connection():
         return None
 
 def release_connection(conn):
-    if conn:
-        try:
-            db_pool().putconn(conn)
-            st.write("✅ ")
-        except Exception as e:
-            st.write(f"⚠️ Failed to return connection: {e}")
-
-from contextlib import contextmanager
-
-def _resolve_display_image(image_path: str | None) -> str | None:
-    """
-    Try to resolve an on-disk image we can show.
-    - If the given path exists, use it.
-    - If it looks like an absolute path that doesn't exist, try its basename under 'uploads/'.
-    - If it's a PDF/DOCX or missing, return None (UI will show a friendly note).
-    """
-    if not image_path:
-        return None
-
-    # If path exists as-is, use it
-    if os.path.exists(image_path):
-        # Don’t try to open PDFs/DOCX directly in st.image
-        if image_path.lower().endswith((".jpg", ".jpeg", ".png")):
-            return image_path
-        return None
-
-    # If absolute or foreign path try basename inside uploads
-    base = os.path.basename(image_path)
-    guess = os.path.join("uploads", base)
-    if os.path.exists(guess) and guess.lower().endswith((".jpg", ".jpeg", ".png")):
-        return guess
-
-    return None
-
-import os
-from PIL import Image
-
-def display_receipt(img_path: str) -> bool:
-    """
-    Try hard to show a receipt image. Logs why it fails.
-    Returns True if something was displayed, else False.
-    """
-    if not img_path:
-        st.info("No image path stored for this receipt.")
-        return False
-
-    # 1) Direct file path on disk
-    if os.path.exists(img_path):
-        try:
-            img = Image.open(img_path)
-            st.image(img, caption=os.path.basename(img_path), use_column_width=True)
-            return True
-        except Exception as e:
-            st.warning(f"Found file but failed to open: {img_path} — {e}")
-
-    # 2) If DB holds raw bytes (future-proof)
-    if isinstance(img_path, (bytes, bytearray)):
-        try:
-            from io import BytesIO
-            st.image(Image.open(BytesIO(img_path)), caption="Receipt", use_column_width=True)
-            return True
-        except Exception as e:
-            st.warning(f"Bytes present but not a valid image: {e}")
-
-    # 3) Show why it didn’t work
-    st.info(f"Could not preview. Stored path: `{img_path}` (exists={os.path.exists(img_path)})")
-    return False
-# ---- Receipt preview helper ----
-def display_receipt(image_path: str) -> bool:
-    """
-    Try to show a preview of a stored receipt.
-    Returns True if an image was shown, else False.
-    """
+    """Return a pooled connection, or close if that fails."""
+    if conn is None:
+        return
     try:
-        # convert_to_image handles pdf/docx -> jpg path for preview
-        preview = convert_to_image(image_path)
-        # If convert_to_image returns a temp path, prefer that
-        candidate = preview if preview and os.path.exists(preview) else image_path
-        if candidate and os.path.exists(candidate):
-            st.image(candidate, width=250)
-            return True
-    except Exception as e:
-        # Optional: uncomment for debugging
-        # st.caption(f"Preview error: {type(e).__name__}: {e}")
-        pass
-    return False
-
-
-@contextmanager
-def get_conn():
-    pool = db_pool()
-    conn = pool.getconn()
-    try:
-        yield conn
-    finally:
+        db_pool().putconn(conn)   
+    except Exception:
         try:
-            pool.putconn(conn)
+            conn.close()          
         except Exception:
             pass
+
+
 
 # --- Image preview helper ---
 def display_receipt(image_path: str) -> bool:
@@ -285,7 +183,7 @@ def insert_receipt(username, merchant, date, time, amount, category, was_correct
     """, (username, merchant, date, time, amount, category, was_corrected, image_path, None))
     conn.commit()
     cur.close()
-    conn.close()
+    release_connection(conn)
 
 def insert_corrected_receipt(username, merchant, date, time, amount, category, original_image):
     conn = get_connection()
@@ -296,7 +194,7 @@ def insert_corrected_receipt(username, merchant, date, time, amount, category, o
     """, (username, merchant, date, time, amount, category, original_image))
     conn.commit()
     cur.close()
-    conn.close()
+    release_connection(conn)
 
 def fetch_receipts(username=None):
     conn = get_connection()
@@ -313,7 +211,7 @@ def fetch_receipts(username=None):
         """)
     rows = cur.fetchall()
     cur.close()
-    conn.close()
+    release_connection(conn)
     return rows
 
 def fetch_corrected_receipts():
@@ -326,7 +224,7 @@ def fetch_corrected_receipts():
     """)
     rows = cur.fetchall()
     cur.close()
-    conn.close()
+    release_connection(conn)
     return rows
 
 def fetch_users():
@@ -335,7 +233,7 @@ def fetch_users():
     cur.execute("SELECT username FROM users WHERE role = 'employee'")
     users = cur.fetchall()
     cur.close()
-    conn.close()
+    release_connection(conn)
     return [u[0] for u in users]
 
 def fetch_flagged_receipts():
@@ -351,7 +249,7 @@ def fetch_flagged_receipts():
     """)
     rows = cur.fetchall()
     cur.close()
-    conn.close()
+    release_connection(conn)
     return rows
 
 def update_anomaly_status_by_id(receipt_id: int, decision: str):
@@ -364,7 +262,7 @@ def update_anomaly_status_by_id(receipt_id: int, decision: str):
     """, (decision, receipt_id))
     conn.commit()
     cur.close()
-    conn.close()
+    release_connection(conn)
 
 def update_anomaly_status(username, uploaded_at, decision):
     conn = get_connection()
@@ -376,7 +274,7 @@ def update_anomaly_status(username, uploaded_at, decision):
     """, (decision, username, uploaded_at))
     conn.commit()
     cur.close()
-    conn.close()
+    release_connection(conn)
 
 def delete_employee_and_data(username):
     conn = get_connection()
@@ -387,7 +285,7 @@ def delete_employee_and_data(username):
     cur.execute("DELETE FROM users WHERE username = %s", (username,))
     conn.commit()
     cur.close()
-    conn.close()
+    release_connection(conn)
 
 def get_corrected_receipts():
     conn = get_connection()
@@ -395,7 +293,7 @@ def get_corrected_receipts():
     cur.execute("SELECT merchant, date, time, amount, category FROM corrected_receipts")
     rows = cur.fetchall()
     cur.close()
-    conn.close()
+    release_connection(conn)
     return rows
 
 def insert_anomaly_feedback(username, merchant, date, time, amount, category, decision, uploaded_at):
@@ -409,7 +307,7 @@ def insert_anomaly_feedback(username, merchant, date, time, amount, category, de
     """, (username, merchant, date, time, amount, category, decision, uploaded_at))
     conn.commit()
     cur.close()
-    conn.close()
+    release_connection(conn)
 
 
 
@@ -454,6 +352,8 @@ def render_upload_ui(user):
 
             # Show predicted 
             for k, v in st.session_state.predicted.items():
+                if k in ("IForestLabel", "IForestScore"):
+                    continue
                 st.text_input(k, v, disabled=True, key=f"pred_{k}")
 
             st.session_state.enable_edit = st.radio(
@@ -486,11 +386,6 @@ def render_upload_ui(user):
             if st.session_state.preview_path:
                 final_path = st.session_state.preview_path
 
-            insert_receipt(
-                user, merchant, date, time_, amount, category,
-                st.session_state.enable_edit,
-                final_path  # <— this should be uploads/preview_*.jpg
-            )
 
             if not final_path:
                 st.error("No uploaded file found. Please upload a receipt first.")
@@ -604,8 +499,7 @@ def _normalize_review(v) -> str | None:
     return s if s in {"approved", "rejected"} else None
 
 def render_analytics(user=None):
-    import re
-    import numpy as np
+  
 
     st.subheader("📊 Spending Analytics")
     rows = fetch_receipts(user)
@@ -734,8 +628,7 @@ def render_anomaly():
             st.success(f"✔️ Already reviewed: **{anomaly_status.upper()}**")
             
 def render_admin_controls():
-    import re
-
+  
     THRESHOLD = 100.0 
     st.subheader("🧑‍💼 View Receipts by Employee")
 
