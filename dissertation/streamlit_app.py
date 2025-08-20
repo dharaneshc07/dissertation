@@ -35,9 +35,18 @@ for key, val in {"page": "landing", "role": None, "user": None, "enable_edit": F
 # =========================
 # Part 2: DB Connection & Auth
 # =========================
+from dotenv import load_dotenv
+
+# Load .env file at the start
+load_dotenv()
+
 def get_connection():
     return psycopg2.connect(
-        dbname="receipts_db", user="postgres", password="", host="localhost", port="5432"
+        dbname=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        host=os.getenv("DB_HOST"),
+        port=os.getenv("DB_PORT")
     )
 
 def check_credentials(username, password):
