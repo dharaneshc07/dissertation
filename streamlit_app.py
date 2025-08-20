@@ -455,6 +455,8 @@ def render_receipts(user):
         st.divider()
         
 
+from PIL import Image
+
 def render_all_receipts():
     st.subheader("📂 All Employee Receipts")
     rows = fetch_receipts()
@@ -465,7 +467,20 @@ def render_all_receipts():
     for r in rows:
         username, merchant, date, time, amount, category, was_corrected, uploaded_at, image_path, anomaly_status = r
 
-        displayed = display_receipt(image_path)
+        # Try to display image or fallback to path
+        try:
+            img = Image.open(image_path)
+            st.image(img, width=220)
+        except Exception:
+            try:
+                preview = convert_to_image(image_path)
+                if preview and os.path.exists(preview):
+                    img = Image.open(preview)
+                    st.image(img, width=220)
+                else:
+                    st.caption(f"🗂 Stored path: {image_path}")
+            except Exception:
+                st.caption(f"🗂 Stored path: {image_path}")
 
         st.write(f"**User:** {username} | **Merchant:** {merchant} | **Date:** {date} | **Time:** {time}")
         st.write(f"**Amount:** {amount} | **Category:** {category} | **Corrected:** {'Yes' if was_corrected else 'No'}")
@@ -479,6 +494,7 @@ def render_all_receipts():
                 amt_val = 0.0
             if amt_val > 100:
                 st.warning("⚠️ Anomaly decision pending")
+
         st.divider()
 
 
@@ -579,6 +595,8 @@ def render_analytics(user=None):
 
 # Anomaly Review & Admin Tools
 
+from PIL import Image
+
 def render_anomaly():
     st.subheader("🚨 Anomaly Review (High-Value Receipts)")
     flagged = fetch_flagged_receipts()
@@ -590,9 +608,20 @@ def render_anomaly():
         (rid, username, merchant, date, time, amount, category,
          uploaded_at, image_path, anomaly_status) = row
 
-        displayed = display_receipt(image_path)
-        if not displayed:
-            st.caption(f"🗂 File stored at: {image_path}")
+        # Try showing image directly or via conversion
+        try:
+            img = Image.open(image_path)
+            st.image(img, width=250)
+        except Exception:
+            try:
+                preview = convert_to_image(image_path)
+                if preview and os.path.exists(preview):
+                    img = Image.open(preview)
+                    st.image(img, width=250)
+                else:
+                    st.caption(f"🗂 Stored path: {image_path}")
+            except Exception:
+                st.caption(f"🗂 Stored path: {image_path}")
 
         st.write(f"**Employee:** {username}")
         st.write(f"**Merchant:** {merchant} | **Date:** {date} | **Time:** {time}")
