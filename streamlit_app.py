@@ -26,6 +26,10 @@ from model_pipeline import (
 st.set_page_config(page_title="125 – 126 Agentic-AI to optimise expense submission process", layout="wide")
 st.title("125 – 126 Agentic-AI to optimise expense submission process")
 
+import os, streamlit as st
+
+c
+
 # Initialize session state
 for key, val in {"page": "landing", "role": None, "user": None, "enable_edit": False}.items():
     if key not in st.session_state:
@@ -55,7 +59,8 @@ def get_connection():
         password=_get_secret("DB_PASSWORD", ""),
         host=_get_secret("DB_HOST", "localhost"),
         port=_get_secret("DB_PORT", "5432"),
-        sslmode=_get_secret("DB_SSLMODE", "require")   # <-- force require
+        sslmode=_get_secret("DB_SSLMODE", "require")   # force SSL for Supabase
+    )
     )
 def check_credentials(username, password):
     conn = get_connection()
