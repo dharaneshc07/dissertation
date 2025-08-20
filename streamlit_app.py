@@ -71,14 +71,23 @@ def release_connection(conn):
         db_pool().putconn(conn)
 
 # (Optional) one-time health check near the top of your app
+t# --- One‑time DB connectivity self‑test (optional) ---
+_conn = None
 try:
     _conn = get_connection()
-    with _conn:
-        with _conn.cursor() as cur:
-            cur.execute("SELECT 1;")
-    st.caption("DB connectivity check: ✅ OK (pooler 6543)")
+    if _conn is None:
+        st.error("DB connection failed ❌ (got None). Check secrets/host/port/SSL.")
+    else:
+        cur = _conn.cursor()
+        cur.execute("SELECT 1;")
+        cur.close()
+        st.success("DB OK ✅ (pooled connection works)")
+except Exception as e:
+    st.error(f"DB connectivity check: ❌ {type(e).__name__}: {e}")
 finally:
-    release_connection(_conn)
+    if _conn is not None:
+        release_connection(_conn)
+        
 def create_user(username: str, password: str, role: str):
     """Insert a new user; show Streamlit feedback."""
     conn = get_connection()
