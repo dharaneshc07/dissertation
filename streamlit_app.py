@@ -67,18 +67,42 @@ def _get_secret(key: str, default: str | None = None) -> str | None:
         pass
     return os.getenv(key, default)
 
+import socket
+
 def get_connection():
+    import psycopg2, os
+    # Prefer a single URL if you ever add it later
+    url = st.secrets.get("DATABASE_URL", os.getenv("DATABASE_URL"))
     try:
+        if url:
+            # Force SSL, add timeout
+            return psycopg2.connect(url, sslmode="require", connect_timeout=10)
+
+        # Otherwise use discrete fields
+        dbname = _get_secret("DB_NAME", "postgres")
+        user = _get_secret("DB_USER", "postgres")
+        pwd = _get_secret("DB_PASSWORD", "")
+        host = _get_secret("DB_HOST", "localhost")
+        port = int(_get_secret("DB_PORT", "5432"))
+
+        # Force SSL for Supabase, add timeout
         return psycopg2.connect(
-            dbname=_get_secret("DB_NAME", "postgres"),
-            user=_get_secret("DB_USER", "postgres"),
-            password=_get_secret("DB_PASSWORD", ""),
-            host=_get_secret("DB_HOST", "localhost"),
-            port=_get_secret("DB_PORT", "5432"),
-            sslmode="require"  # 🔑 Force SSL for Supabase
+            dbname=dbname,
+            user=user,
+            password=pwd,
+            host=host,
+            port=port,
+            sslmode="require",
+            connect_timeout=10,
         )
     except Exception as e:
-        st.error(f"Database connection failed: {e}")
+        # Show a compact, safe hint in the UI, log the real error in console
+        st.error("DB connection failed ❌. Check secrets & network.")
+        st.caption(
+            f"Host: {host}, Port: {port}, DB: {dbname}, User: {user} (password hidden)."
+        )
+        # Print full details to server logs (visible in Streamlit “Manage app → Logs”)
+        print("DB connection error:", repr(e))
         return None
 
 def _probe_db():
@@ -99,13 +123,16 @@ if "page" not in st.session_state or st.session_state["page"] == "landing":
 
 def check_credentials(username, password):
     conn = get_connection()
+    if conn is None:
+        return None  # short-circuit if DB is unreachable
+
     cur = conn.cursor()
     cur.execute("SELECT password_hash, role FROM users WHERE username = %s", (username,))
-    user = cur.fetchone()
+    row = cur.fetchone()
     cur.close()
     conn.close()
-    if user and bcrypt.checkpw(password.encode(), user[0].encode()):
-        return user[1]
+    if row and bcrypt.checkpw(password.encode(), row[0].encode()):
+        return row[1]
     return None
 
 def create_user(username, password, role):
