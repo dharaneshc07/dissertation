@@ -92,6 +92,31 @@ def release_connection(conn):
 
 from contextlib import contextmanager
 
+def _resolve_display_image(image_path: str | None) -> str | None:
+    """
+    Try to resolve an on-disk image we can show.
+    - If the given path exists, use it.
+    - If it looks like an absolute path that doesn't exist, try its basename under 'uploads/'.
+    - If it's a PDF/DOCX or missing, return None (UI will show a friendly note).
+    """
+    if not image_path:
+        return None
+
+    # If path exists as-is, use it
+    if os.path.exists(image_path):
+        # Don’t try to open PDFs/DOCX directly in st.image
+        if image_path.lower().endswith((".jpg", ".jpeg", ".png")):
+            return image_path
+        return None
+
+    # If absolute or foreign path try basename inside uploads
+    base = os.path.basename(image_path)
+    guess = os.path.join("uploads", base)
+    if os.path.exists(guess) and guess.lower().endswith((".jpg", ".jpeg", ".png")):
+        return guess
+
+    return None
+
 @contextmanager
 def get_conn():
     pool = db_pool()
@@ -368,7 +393,17 @@ def render_upload_ui(user):
 
         if st.button("Submit Receipt"):
             # Use session-stored paths from the upload step
-            final_path = st.session_state.preview_path or st.session_state.raw_path
+            final_path = st.session_state.preview_path
+
+            # Force storing a safe relative preview if possible
+            if st.session_state.preview_path:
+                final_path = st.session_state.preview_path
+
+            insert_receipt(
+                user, merchant, date, time_, amount, category,
+                st.session_state.enable_edit,
+                final_path  # <— this should be uploads/preview_*.jpg
+            )
 
             if not final_path:
                 st.error("No uploaded file found. Please upload a receipt first.")
