@@ -117,6 +117,39 @@ def _resolve_display_image(image_path: str | None) -> str | None:
 
     return None
 
+import os
+from PIL import Image
+
+def display_receipt(img_path: str) -> bool:
+    """
+    Try hard to show a receipt image. Logs why it fails.
+    Returns True if something was displayed, else False.
+    """
+    if not img_path:
+        st.info("No image path stored for this receipt.")
+        return False
+
+    # 1) Direct file path on disk
+    if os.path.exists(img_path):
+        try:
+            img = Image.open(img_path)
+            st.image(img, caption=os.path.basename(img_path), use_column_width=True)
+            return True
+        except Exception as e:
+            st.warning(f"Found file but failed to open: {img_path} — {e}")
+
+    # 2) If DB holds raw bytes (future-proof)
+    if isinstance(img_path, (bytes, bytearray)):
+        try:
+            from io import BytesIO
+            st.image(Image.open(BytesIO(img_path)), caption="Receipt", use_column_width=True)
+            return True
+        except Exception as e:
+            st.warning(f"Bytes present but not a valid image: {e}")
+
+    # 3) Show why it didn’t work
+    st.info(f"Could not preview. Stored path: `{img_path}` (exists={os.path.exists(img_path)})")
+    return False
 # ---- Receipt preview helper ----
 def display_receipt(image_path: str) -> bool:
     """
@@ -137,7 +170,7 @@ def display_receipt(image_path: str) -> bool:
         pass
     return False
 
-    
+
 @contextmanager
 def get_conn():
     pool = db_pool()
@@ -480,7 +513,8 @@ def render_receipts(user):
         return
     for r in rows:
         merchant, date, time, amount, category, was_corrected, uploaded_at, image_path, anomaly_status = r
-        displayed = display_receipt(image_path)
+        # Preview image (robust)
+        _ = display_receipt(image_path)
         if not displayed:
             st.caption(f"🗂 Stored path: {image_path}")
 
@@ -506,7 +540,8 @@ def render_all_receipts():
         return
     for r in rows:
         username, merchant, date, time, amount, category, was_corrected, uploaded_at, image_path, anomaly_status = r
-        displayed = display_receipt(image_path)
+        # Preview image (robust)
+        _ = display_receipt(image_path)
         if not displayed:
             st.caption(f"🗂 Stored path: {image_path}")
 
