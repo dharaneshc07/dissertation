@@ -17,9 +17,13 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, IsolationForest
 
-# ---------------------------
-# Keyword categories (fallback)
-# ---------------------------
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+import joblib
+
+# --- Define keyword categories ---
+categories = ['Food', 'Travel', 'Office Supplies', 'Accommodation', 'Other']
 sample_keywords = {
     'Food': ['restaurant', 'food', 'burger', 'pizza', 'eat', 'meal', 'kitchen'],
     'Travel': ['uber', 'taxi', 'train', 'flight', 'bus', 'ola', 'cab'],
@@ -28,20 +32,22 @@ sample_keywords = {
     'Other': []
 }
 
+# --- Train model if not already saved ---
 def train_category_model():
-    texts, labels = [], []
+    texts = []
+    labels = []
     for cat, words in sample_keywords.items():
         for w in words:
             texts.append(w)
             labels.append(cat)
-    vectorizer = CountVectorizer()
-    X = vectorizer.fit_transform(texts)
-    clf = LogisticRegression(max_iter=1000)
-    clf.fit(X, labels)
-    joblib.dump((clf, vectorizer), "category_model.pkl")
 
-if not os.path.exists("category_model.pkl"):
-    train_category_model()
+    vectorizer = TfidfVectorizer()
+    X = vectorizer.fit_transform(texts)
+    clf = LogisticRegression()
+    clf.fit(X, labels)
+
+    joblib.dump((clf, vectorizer), "category_model.pkl")
+    print("✅ Model trained and saved as category_model.pkl")
 
 clf, vectorizer = joblib.load("category_model.pkl")
 
@@ -203,6 +209,11 @@ def update_retrain_log(get_connection_fn):
     conn.commit()
     cur.close(); conn.close()
 
+def predict_category(text):
+    clf, vectorizer = joblib.load("category_model.pkl")
+    X = vectorizer.transform([text])
+    prediction = clf.predict(X)[0]
+    return prediction
 # ---------------------------
 # Isolation Forest (anomaly)
 # ---------------------------
@@ -270,17 +281,11 @@ def predict_receipt(path):
     text = extract_text_from_file(path)
     entities = extract_entities(text)
 
-    # Category: use feedback model if available; else fallback keywords
-    processed = preprocess_features(entities)
-    try:
-        with open("model_feedback.pkl", "rb") as f:
-            cat_model = pickle.load(f)
-        category = cat_model.predict([processed])[0]
-    except Exception:
-        category = entities.get("Category", "Other")
+    from model_pipeline import predict_category
+    category = predict_category(text)
     entities["Category"] = category
 
-    # Isolation Forest anomaly meta
+# Isolation Forest anomaly meta
     label, score = predict_anomaly_on_amount(entities.get("Amount"))
     entities["IForestLabel"] = label     # -1 anomaly, 1 normal, None if unavailable
     entities["IForestScore"] = score

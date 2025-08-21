@@ -1,4 +1,4 @@
-# --- model_pipeline.py ---
+# imports:
 import os
 import re
 import cv2
@@ -11,15 +11,21 @@ import pytesseract
 from PIL import Image
 from pdf2image import convert_from_path
 from docx import Document
+import NamedTemporaryFile
+
 
 from sklearn.pipeline import make_pipeline
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, IsolationForest
 
-# ---------------------------
-# Keyword categories (fallback)
-# ---------------------------
+def release_connection(conn):
+    try:
+        conn.close()
+    except Exception:
+        pass
+# Keyword categories 
+
 sample_keywords = {
     'Food': ['restaurant', 'food', 'burger', 'pizza', 'eat', 'meal', 'kitchen'],
     'Travel': ['uber', 'taxi', 'train', 'flight', 'bus', 'ola', 'cab'],
@@ -45,16 +51,22 @@ if not os.path.exists("category_model.pkl"):
 
 clf, vectorizer = joblib.load("category_model.pkl")
 
-# ---------------------------
-# File handling
-# ---------------------------
+# File handling 
+
+import tempfile
+
+def _safe_temp_jpg() -> str:
+    f = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+    f.close()
+    return f.name
+
 def convert_to_image(path):
     ext = os.path.splitext(path)[-1].lower()
     if ext in [".jpg", ".jpeg", ".png"]:
         return path
     elif ext == ".pdf":
         images = convert_from_path(path, first_page=1, last_page=1)
-        temp_path = tempfile.mktemp(suffix=".jpg")
+        temp_path = _safe_temp_jpg()
         images[0].save(temp_path, "JPEG")
         return temp_path
     elif ext == ".docx":
@@ -63,40 +75,41 @@ def convert_to_image(path):
             rel = doc.part._rels[rel]
             if "image" in rel.target_ref:
                 image_data = rel.target_part.blob
-                temp_path = tempfile.mktemp(suffix=".jpg")
+                temp_path = _safe_temp_jpg()
                 with open(temp_path, "wb") as f:
                     f.write(image_data)
                 return temp_path
         raise ValueError("❌ No image found in DOCX file.")
     else:
-        raise ValueError(f"❌ Unsupported file type: {ext}")
+        raise ValueError(f"❌ Unsupported file type: {ext}"
 
-# ---------------------------
-# Image preprocessing / OCR
-# ---------------------------
+# Image preprocessing using OCR
+
 def rotate_and_preprocess(image_path):
     image = cv2.imread(image_path)
+    if image is None:
+        raise ValueError(f"Could not read image: {image_path}")
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    gray = cv2.bitwise_not(gray)
-    thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+    gray = cv2.medianBlur(gray, 3)
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     coords = np.column_stack(np.where(thresh > 0))
+    if coords.size == 0:
+        return image
     angle = cv2.minAreaRect(coords)[-1]
     angle = -(90 + angle) if angle < -45 else -angle
     (h, w) = image.shape[:2]
-    center = (w // 2, h // 2)
-    M = cv2.getRotationMatrix2D(center, angle, 1.0)
-    rotated = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-    return rotated
+    M = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
+    return cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
 
 def extract_text_from_file(path):
     img_path = convert_to_image(path)
     rotated = rotate_and_preprocess(img_path)
-    text = pytesseract.image_to_string(rotated)
+    text = pytesseract.image_to_string(rotated, config="--oem 3 --psm 6")
     return text
 
-# ---------------------------
-# Text → fields
-# ---------------------------
+
+# Text extracted fields
+
 def extract_fields(text):
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     merchant = next((line for line in lines[:5] if any(c.isalpha() for c in line)), "Unknown")
@@ -154,9 +167,9 @@ def extract_entities(text):
 def preprocess_features(entities):
     return f"{entities['Merchant']} {entities['Date']} {entities['Time']} {entities['Amount']}"
 
-# ---------------------------
-# Feedback (category) training
-# ---------------------------
+
+# Feedback loop training
+
 def load_training_data_from_corrections(db_connection_fn):
     conn = db_connection_fn()
     cur = conn.cursor()
@@ -165,7 +178,7 @@ def load_training_data_from_corrections(db_connection_fn):
     """)
     rows = cur.fetchall()
     cur.close()
-    conn.close()
+    release_connection(conn)
     return pd.DataFrame(rows, columns=["merchant", "date", "time", "amount", "category"])
 
 def retrain_model(df, model_path="model_feedback.pkl"):
@@ -191,7 +204,7 @@ def should_trigger_retraining(get_connection_fn, threshold=10):
     cur.execute("SELECT last_count FROM retrain_log ORDER BY id DESC LIMIT 1")
     row = cur.fetchone()
     last_count = row[0] if row else 0
-    cur.close(); conn.close()
+    cur.close(); release_connection(conn)
     return total - last_count >= threshold
 
 def update_retrain_log(get_connection_fn):
@@ -201,11 +214,11 @@ def update_retrain_log(get_connection_fn):
     total = cur.fetchone()[0]
     cur.execute("INSERT INTO retrain_log (last_count) VALUES (%s)", (total,))
     conn.commit()
-    cur.close(); conn.close()
+    cur.close(); release_connection(conn)
 
-# ---------------------------
-# Isolation Forest (anomaly)
-# ---------------------------
+
+# Isolation Forest (for anomaly)
+
 def _amount_to_float(amount_str):
     try:
         cleaned = str(amount_str).replace("£", "").replace(",", "")
@@ -227,7 +240,7 @@ def load_anomaly_training_data(db_connection_fn):
           AND amount ~ '^[£]?[0-9,]+(\\.[0-9]{1,2})?$'
     """)
     rows = cur.fetchall()
-    cur.close(); conn.close()
+    cur.close(); release_connection(conn)
 
     df = pd.DataFrame(rows, columns=["amount"])
     df["AmountVal"] = df["amount"].apply(_amount_to_float)
@@ -263,26 +276,26 @@ def predict_anomaly_on_amount(amount_str, model_path="anomaly_iforest.pkl"):
     score = float(model.decision_function(X)[0])
     return (label, score)
 
-# ---------------------------
+
 # Inference (category + anomaly meta)
-# ---------------------------
+
 def predict_receipt(path):
     text = extract_text_from_file(path)
     entities = extract_entities(text)
 
-    # Category: use feedback model if available; else fallback keywords
+    # Category (feedback model if present, or fallback)
+    processed = preprocess_features(entities)
+    # Category
     processed = preprocess_features(entities)
     try:
-        with open("model_feedback.pkl", "rb") as f:
-            cat_model = pickle.load(f)
+        cat_model = joblib.load("model_feedback.pkl")
         category = cat_model.predict([processed])[0]
     except Exception:
         category = entities.get("Category", "Other")
     entities["Category"] = category
 
-    # Isolation Forest anomaly meta
-    label, score = predict_anomaly_on_amount(entities.get("Amount"))
-    entities["IForestLabel"] = label     # -1 anomaly, 1 normal, None if unavailable
-    entities["IForestScore"] = score
-
-    return entities
+# Isolation Forest — make keys match Streamlit UI
+label, score = predict_anomaly_on_amount(entities.get("Amount"))
+entities["IForestLabel"] = label
+entities["IForestScore"] = score
+return entities
