@@ -5,6 +5,7 @@ on:
     # Runs every 4 hours (e.g., 04:00, 08:00, 12:00, etc., UTC).
     # This keeps the app awake by resetting the 12-hour sleep timer.
     - cron: '0 */4 * * *'
+  # Allows for manual testing via the GitHub Actions UI
   workflow_dispatch:
 
 jobs:
@@ -13,12 +14,13 @@ jobs:
     steps:
       - name: Send a ping to the Streamlit app
         run: |
-          # *** REPLACE THIS URL with your app's actual URL ***
-          APP_URL="https://disseration.streamlit.app/"
-
-          echo "Pinging ${APP_URL}..."
-
-          # Use curl to make a simple request
-          curl -sS -L "${APP_URL}" > /dev/null
-
-          echo "Ping complete. Timer should be reset."
+          # Pinging the healthcheck.txt file bypasses the redirect loop from the login page.
+          APP_URL="https://disseration.streamlit.app/healthcheck.txt"
+          
+          echo "Attempting to wake up the app at ${APP_URL}..."
+          
+          # Use curl with increased timeout (30s) and follow redirects (-L)
+          # --max-time 30: Gives the Streamlit app 30 seconds to wake up and respond.
+          curl -sS -L --max-time 30 "${APP_URL}" > /dev/null
+          
+          echo "Ping command finished successfully."
