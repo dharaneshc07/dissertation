@@ -15,7 +15,9 @@ jobs:
       - name: Send a ping to the Streamlit app
         run: |
           # Pinging the healthcheck.txt file bypasses the redirect loop from the login page.
-          APP_URL="https://disseration.streamlit.app/healthcheck.txt"
+                    # *** TARGET THE STATIC FOLDER PATH ***
+          APP_URL="https://disseration.streamlit.app/app/static/healthcheck.txt"
+
           
           echo "Attempting to wake up the app at ${APP_URL}..."
           
